@@ -17,7 +17,11 @@ import {
   FileCheck,
   ShoppingCart,
   Trophy,
-  AlertCircle
+  AlertCircle,
+  Filter,
+  Heart,
+  Award,
+  X
 } from 'lucide-react';
 import { useStore } from '../store';
 import { EntryCard } from '../components/business';
@@ -29,10 +33,25 @@ export const CategoryPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState('recent');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterOnlyFavorite, setFilterOnlyFavorite] = useState(false);
+  const [filterOnlyOfficial, setFilterOnlyOfficial] = useState(false);
+  const [filterDepartment, setFilterDepartment] = useState('');
 
-  const { categories, entries } = useStore();
+  const { categories, entries, favorites } = useStore();
   const rootCategories = categories.filter(c => !c.parentId);
   const selectedCategory = id ? categories.find(c => c.id === id) : null;
+
+  const departments = [
+    { id: 'dept-1', name: '技术研发部' },
+    { id: 'dept-2', name: '产品设计部' },
+    { id: 'dept-3', name: '市场营销部' },
+    { id: 'dept-4', name: '人力资源部' },
+    { id: 'dept-5', name: '财务部' },
+    { id: 'dept-6', name: '行政部' },
+    { id: 'dept-7', name: '客户服务部' },
+    { id: 'dept-8', name: '质量管理部门' },
+  ];
 
   const getCategoryIcon = (iconName: string) => {
     const icons: Record<string, React.ReactNode> = {
@@ -125,7 +144,7 @@ export const CategoryPage: React.FC = () => {
     });
   };
 
-  const sortedEntries = useMemo(() => {
+  const filteredEntries = useMemo(() => {
     let filtered = [...categoryEntries];
 
     if (searchTerm) {
@@ -137,19 +156,40 @@ export const CategoryPage: React.FC = () => {
       );
     }
 
-    return filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'hot':
-          return b.viewCount - a.viewCount;
-        case 'recent':
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        case 'favorite':
-          return b.favoriteCount - a.favoriteCount;
-        default:
-          return 0;
-      }
-    });
-  }, [categoryEntries, sortBy, searchTerm]);
+    if (filterOnlyFavorite) {
+      filtered = filtered.filter(entry => favorites.includes(entry.id));
+    }
+
+    if (filterOnlyOfficial) {
+      filtered = filtered.filter(entry => entry.isOfficial);
+    }
+
+    if (filterDepartment) {
+      filtered = filtered.filter(entry => entry.departmentId === filterDepartment);
+    }
+
+    switch (sortBy) {
+      case 'hot':
+        filtered.sort((a, b) => b.viewCount - a.viewCount);
+        break;
+      case 'recent':
+        filtered.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        break;
+      case 'favorite':
+        filtered.sort((a, b) => b.favoriteCount - a.favoriteCount);
+        break;
+    }
+
+    return filtered;
+  }, [categoryEntries, sortBy, searchTerm, filterOnlyFavorite, filterOnlyOfficial, filterDepartment, favorites]);
+
+  const clearFilters = () => {
+    setFilterOnlyFavorite(false);
+    setFilterOnlyOfficial(false);
+    setFilterDepartment('');
+  };
+
+  const hasActiveFilters = filterOnlyFavorite || filterOnlyOfficial || filterDepartment;
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -245,7 +285,7 @@ export const CategoryPage: React.FC = () => {
                       {selectedCategory?.name}
                     </h1>
                     <p className="text-sm text-slate-600 mt-1">
-                      {selectedCategory?.description} · 共 {sortedEntries.length} 篇词条
+                      {selectedCategory?.description} · 共 {filteredEntries.length} 篇词条
                       {categories.filter(c => c.parentId === id).length > 0 && (
                         <span className="ml-2 text-blue-600">
                           (包含子分类)
@@ -262,6 +302,18 @@ export const CategoryPage: React.FC = () => {
                         icon={<Search size={18} />}
                       />
                     </div>
+                    <Button
+                      variant={showFilters ? 'primary' : 'outline'}
+                      onClick={() => setShowFilters(!showFilters)}
+                    >
+                      <Filter size={18} className="mr-1" />
+                      筛选
+                      {hasActiveFilters && (
+                        <span className="ml-1 bg-white text-blue-600 rounded-full px-2 py-0.5 text-xs">
+                          {Number(filterOnlyFavorite) + Number(filterOnlyOfficial) + Number(!!filterDepartment)}
+                        </span>
+                      )}
+                    </Button>
                     <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden">
                       <button
                         onClick={() => setViewMode('grid')}
@@ -292,7 +344,61 @@ export const CategoryPage: React.FC = () => {
                   </div>
                 </div>
 
-                {sortedEntries.length > 0 ? (
+                {showFilters && (
+                  <Card className="mb-6 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-slate-900">筛选条件</h3>
+                      {hasActiveFilters && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                          <X size={16} className="mr-1" />
+                          清除筛选
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <label className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                        filterOnlyFavorite ? 'bg-red-50 border-2 border-red-200' : 'bg-slate-50 border-2 border-transparent'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={filterOnlyFavorite}
+                          onChange={(e) => setFilterOnlyFavorite(e.target.checked)}
+                          className="mr-3"
+                        />
+                        <Heart size={18} className="mr-2 text-red-500" />
+                        <span className="font-medium text-slate-700">只看收藏</span>
+                      </label>
+                      <label className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                        filterOnlyOfficial ? 'bg-amber-50 border-2 border-amber-200' : 'bg-slate-50 border-2 border-transparent'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={filterOnlyOfficial}
+                          onChange={(e) => setFilterOnlyOfficial(e.target.checked)}
+                          className="mr-3"
+                        />
+                        <Award size={18} className="mr-2 text-amber-500" />
+                        <span className="font-medium text-slate-700">只看官方</span>
+                      </label>
+                      <div>
+                        <select
+                          value={filterDepartment}
+                          onChange={(e) => setFilterDepartment(e.target.value)}
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">全部部门</option>
+                          {departments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {filteredEntries.length > 0 ? (
                   <div
                     className={
                       viewMode === 'grid'
@@ -300,7 +406,7 @@ export const CategoryPage: React.FC = () => {
                         : 'space-y-4'
                     }
                   >
-                    {sortedEntries.map((entry) => (
+                    {filteredEntries.map((entry) => (
                       <EntryCard key={entry.id} entry={entry} />
                     ))}
                   </div>
@@ -308,14 +414,17 @@ export const CategoryPage: React.FC = () => {
                   <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
                     <AlertCircle size={64} className="mx-auto text-slate-300 mb-4" />
                     <p className="text-slate-600">
-                      {searchTerm ? '没有找到匹配的词条' : '该分类下暂无词条'}
+                      {searchTerm || hasActiveFilters ? '没有找到匹配的词条' : '该分类下暂无词条'}
                     </p>
-                    {searchTerm && (
+                    {(searchTerm || hasActiveFilters) && (
                       <button
-                        onClick={() => setSearchTerm('')}
+                        onClick={() => {
+                          setSearchTerm('');
+                          clearFilters();
+                        }}
                         className="mt-4 text-blue-600 hover:underline"
                       >
-                        清除搜索
+                        清除搜索和筛选
                       </button>
                     )}
                   </div>

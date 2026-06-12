@@ -7,10 +7,11 @@ import {
   XCircle,
   Eye,
   Filter,
-  ChevronRight,
   AlertCircle,
   CheckCircle as CheckCircleIcon,
-  X
+  User,
+  MessageSquare,
+  History
 } from 'lucide-react';
 import { useStore } from '../store';
 import { Card, Button, Badge, Avatar } from '../components/base';
@@ -24,7 +25,7 @@ export const ReviewPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
-  const { entries, categories, approveEntry, rejectEntry } = useStore();
+  const { entries, categories, approveEntry, rejectEntry, getReviewsByEntryId } = useStore();
 
   const pendingEntries = useMemo(() =>
     entries.filter((e) => e.status === 'pending'),
@@ -54,7 +55,7 @@ export const ReviewPage: React.FC = () => {
   };
 
   const handleApprove = (entryId: string) => {
-    approveEntry(entryId);
+    approveEntry(entryId, reviewComment || '审核通过');
     setReviewComment('');
     showNotification('词条已通过审核', 'success');
     setSelectedEntry(null);
@@ -65,7 +66,7 @@ export const ReviewPage: React.FC = () => {
       showNotification('请填写驳回原因', 'error');
       return;
     }
-    rejectEntry(entryId);
+    rejectEntry(entryId, reviewComment);
     showNotification('词条已驳回', 'success');
     setReviewComment('');
     setSelectedEntry(null);
@@ -83,7 +84,7 @@ export const ReviewPage: React.FC = () => {
             ) : (
               <XCircle size={18} />
             )}
-            <span>{toastMessage}</span>
+            <span>{ toastMessage}</span>
           </div>
         </div>
       )}
@@ -195,6 +196,7 @@ export const ReviewPage: React.FC = () => {
                   const entry = currentEntries.find((e) => e.id === selectedEntry);
                   if (!entry) return null;
                   const category = categories.find(c => c.id === entry.categoryId);
+                  const reviews = getReviewsByEntryId(entry.id);
 
                   return (
                     <Card className="p-6">
@@ -248,22 +250,71 @@ export const ReviewPage: React.FC = () => {
                         </div>
                       )}
 
+                      {reviews.length > 0 && (
+                        <div className="mb-6 border-t border-slate-200 pt-6">
+                          <h3 className="font-semibold text-slate-900 mb-4 flex items-center">
+                            <History size={18} className="mr-2" />
+                            审核历史
+                          </h3>
+                          <div className="space-y-3">
+                            {reviews.map((review) => (
+                              <div
+                                key={review.id}
+                                className={`p-4 rounded-lg ${
+                                  review.action === 'approve'
+                                    ? 'bg-green-50 border border-green-200'
+                                    : 'bg-red-50 border border-red-200'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex items-center space-x-2">
+                                    {review.action === 'approve' ? (
+                                      <CheckCircle size={16} className="text-green-600" />
+                                    ) : (
+                                      <XCircle size={16} className="text-red-600" />
+                                    )}
+                                    <span className={`font-medium ${
+                                      review.action === 'approve' ? 'text-green-900' : 'text-red-900'
+                                    }`}>
+                                      {review.action === 'approve' ? '已通过' : '已驳回'}
+                                    </span>
+                                    <span className="text-sm text-slate-600 flex items-center">
+                                      <User size={14} className="mr-1" />
+                                      {review.reviewerName}
+                                    </span>
+                                  </div>
+                                  <span className="text-xs text-slate-500">
+                                    {formatDate(review.createdAt)}
+                                  </span>
+                                </div>
+                                {review.comment && (
+                                  <div className="mt-2 p-2 bg-white rounded border border-slate-200">
+                                    <p className="text-sm text-slate-700 flex items-start">
+                                      <MessageSquare size={14} className="mr-2 mt-0.5 text-slate-400" />
+                                      {review.comment}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {activeTab === 'pending' && (
                         <div className="border-t border-slate-200 pt-6">
                           <h3 className="font-semibold text-slate-900 mb-3">审核意见</h3>
                           <textarea
                             value={reviewComment}
                             onChange={(e) => setReviewComment(e.target.value)}
-                            placeholder={activeTab === 'pending' ? '填写审核意见(驳回时必填)...' : '查看审核意见'}
+                            placeholder="填写审核意见..."
                             className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-4"
                             rows={4}
-                            disabled={activeTab !== 'pending'}
                           />
                           <div className="flex justify-end space-x-3">
                             <Button
                               variant="danger"
                               onClick={() => handleReject(entry.id)}
-                              disabled={!reviewComment.trim() && activeTab === 'pending'}
                             >
                               <XCircle size={18} className="mr-2" />
                               驳回
@@ -272,27 +323,6 @@ export const ReviewPage: React.FC = () => {
                               <CheckCircle size={18} className="mr-2" />
                               通过
                             </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeTab !== 'pending' && (
-                        <div className="border-t border-slate-200 pt-6">
-                          <h3 className="font-semibold text-slate-900 mb-3">审核结果</h3>
-                          <div className={`inline-flex items-center px-4 py-2 rounded-lg ${
-                            activeTab === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                          }`}>
-                            {activeTab === 'approved' ? (
-                              <>
-                                <CheckCircle size={18} className="mr-2" />
-                                已通过审核
-                              </>
-                            ) : (
-                              <>
-                                <XCircle size={18} className="mr-2" />
-                                已驳回
-                              </>
-                            )}
                           </div>
                         </div>
                       )}

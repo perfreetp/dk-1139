@@ -8,6 +8,7 @@ import {
   EditorPage,
   ReviewPage,
   AdminPage,
+  MySubmissionsPage,
 } from "./pages";
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
           <Route path="search" element={<SearchPage />} />
           <Route path="editor" element={<EditorPage />} />
           <Route path="editor/:id" element={<EditorPage />} />
+          <Route path="submissions" element={<MySubmissionsPage />} />
           <Route path="review" element={<ReviewPage />} />
           <Route path="admin" element={<AdminPage />} />
         </Route>

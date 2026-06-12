@@ -19,6 +19,7 @@ export interface Entry {
   viewCount: number;
   favoriteCount: number;
   commentCount: number;
+  rejectReason?: string;
 }
 
 export interface Category {
@@ -79,6 +80,7 @@ export interface Announcement {
   isPinned: boolean;
   createdAt: string;
   authorId: string;
+  pinOrder?: number;
 }
 
 export interface Version {
@@ -113,4 +115,6 @@ export interface SearchFilters {
   categoryId?: string;
   departmentId?: string;
   tags?: string[];
+  isOfficial?: boolean;
+  isFavorite?: boolean;
 }

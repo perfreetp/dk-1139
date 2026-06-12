@@ -6,6 +6,11 @@ import { mockCategories as initialCategories } from '../data/mockCategories';
 import { mockAnnouncements as initialAnnouncements } from '../data/mockAnnouncements';
 import { mockComments as initialComments } from '../data/mockComments';
 
+interface LikedComment {
+  commentId: string;
+  timestamp: number;
+}
+
 interface AppState {
   currentUser: User | null;
   favorites: string[];
@@ -15,7 +20,8 @@ interface AppState {
   comments: Comment[];
   categories: Category[];
   announcements: Announcement[];
-  pendingReviews: Review[];
+  reviews: Review[];
+  likedComments: LikedComment[];
 
   setCurrentUser: (user: User | null) => void;
   login: () => void;
@@ -28,21 +34,28 @@ interface AppState {
   createEntry: (entry: Omit<Entry, 'id' | 'createdAt' | 'updatedAt' | 'viewCount' | 'favoriteCount' | 'commentCount'>) => Entry;
   updateEntry: (id: string, updates: Partial<Entry>) => void;
   submitForReview: (id: string) => void;
-  approveEntry: (id: string) => void;
-  rejectEntry: (id: string) => void;
+  approveEntry: (id: string, comment: string) => void;
+  rejectEntry: (id: string, comment: string) => void;
   getEntryById: (id: string) => Entry | undefined;
+  getMyEntries: (status?: string) => Entry[];
 
-  addComment: (comment: Omit<Comment, 'id' | 'createdAt' | 'likeCount'>) => void;
+  addComment: (comment: Omit<Comment, 'id' | 'createdAt' | 'likeCount'>) => Comment;
+  addReply: (parentId: string, entryId: string, content: string) => void;
   likeComment: (commentId: string) => void;
+  hasLikedComment: (commentId: string) => boolean;
+  getCommentLikes: (commentId: string) => number;
 
   addCategory: (category: Omit<Category, 'id' | 'entryCount'>) => void;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
 
-  addAnnouncement: (announcement: Omit<Announcement, 'id' | 'createdAt'>) => void;
+  addAnnouncement: (announcement: Omit<Announcement, 'id' | 'createdAt' | 'pinOrder'>) => void;
   updateAnnouncement: (id: string, updates: Partial<Announcement>) => void;
   deleteAnnouncement: (id: string) => void;
   togglePinAnnouncement: (id: string) => void;
+  getPinnedAnnouncements: () => Announcement[];
+
+  getReviewsByEntryId: (entryId: string) => Review[];
 
   incrementViewCount: (entryId: string) => void;
 }
@@ -75,7 +88,8 @@ export const useStore = create<AppState>((set, get) => ({
   comments: loadFromStorage('kb_comments', initialComments),
   categories: loadFromStorage('kb_categories', initialCategories),
   announcements: loadFromStorage('kb_announcements', initialAnnouncements),
-  pendingReviews: [],
+  reviews: loadFromStorage('kb_reviews', []),
+  likedComments: loadFromStorage('kb_liked_comments', []),
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -91,7 +105,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   toggleFavorite: (entryId) => {
-    const { favorites, entries } = get();
+    const { favorites } = get();
     const isFav = favorites.includes(entryId);
 
     if (isFav) {
@@ -170,37 +184,79 @@ export const useStore = create<AppState>((set, get) => ({
     const { entries } = get();
     const updatedEntries = entries.map(entry =>
       entry.id === id
-        ? { ...entry, status: 'pending', updatedAt: new Date().toISOString().split('T')[0] }
+        ? { ...entry, status: 'pending', rejectReason: undefined, updatedAt: new Date().toISOString().split('T')[0] }
         : entry
     );
     saveToStorage('kb_entries', updatedEntries);
     set({ entries: updatedEntries });
   },
 
-  approveEntry: (id) => {
-    const { entries } = get();
+  approveEntry: (id, comment) => {
+    const { entries, reviews, currentUser } = get();
     const updatedEntries = entries.map(entry =>
       entry.id === id
         ? { ...entry, status: 'approved', updatedAt: new Date().toISOString().split('T')[0] }
         : entry
     );
+
+    const newReview: Review = {
+      id: generateId(),
+      entryId: id,
+      reviewerId: currentUser?.id || 'user-1',
+      reviewerName: currentUser?.name || '管理员',
+      action: 'approve',
+      comment,
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+
+    const updatedReviews = [...reviews, newReview];
+
     saveToStorage('kb_entries', updatedEntries);
-    set({ entries: updatedEntries });
+    saveToStorage('kb_reviews', updatedReviews);
+    set({ entries: updatedEntries, reviews: updatedReviews });
   },
 
-  rejectEntry: (id) => {
-    const { entries } = get();
+  rejectEntry: (id, comment) => {
+    const { entries, reviews, currentUser } = get();
     const updatedEntries = entries.map(entry =>
       entry.id === id
-        ? { ...entry, status: 'rejected', updatedAt: new Date().toISOString().split('T')[0] }
+        ? { ...entry, status: 'rejected', rejectReason: comment, updatedAt: new Date().toISOString().split('T')[0] }
         : entry
     );
+
+    const newReview: Review = {
+      id: generateId(),
+      entryId: id,
+      reviewerId: currentUser?.id || 'user-1',
+      reviewerName: currentUser?.name || '管理员',
+      action: 'reject',
+      comment,
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+
+    const updatedReviews = [...reviews, newReview];
+
     saveToStorage('kb_entries', updatedEntries);
-    set({ entries: updatedEntries });
+    saveToStorage('kb_reviews', updatedReviews);
+    set({ entries: updatedEntries, reviews: updatedReviews });
   },
 
   getEntryById: (id) => {
     return get().entries.find(entry => entry.id === id);
+  },
+
+  getMyEntries: (status) => {
+    const { entries, currentUser } = get();
+    const userId = currentUser?.id || 'user-1';
+    let filtered = entries.filter(entry => entry.authorId === userId);
+
+    if (status) {
+      filtered = filtered.filter(entry => entry.status === status);
+    }
+
+    return filtered.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
   },
 
   addComment: (commentData) => {
@@ -223,17 +279,62 @@ export const useStore = create<AppState>((set, get) => ({
     saveToStorage('kb_entries', updatedEntries);
 
     set({ comments: updatedComments, entries: updatedEntries });
+    return newComment;
+  },
+
+  addReply: (parentId, entryId, content) => {
+    const { currentUser, comments, entries } = get();
+    const newReply: Comment = {
+      id: generateId(),
+      entryId,
+      userId: currentUser?.id || 'user-1',
+      userName: currentUser?.name || '匿名用户',
+      userAvatar: currentUser?.avatar || '',
+      content,
+      parentId,
+      createdAt: new Date().toISOString().split('T')[0],
+      likeCount: 0,
+    };
+
+    const updatedComments = [newReply, ...comments];
+    saveToStorage('kb_comments', updatedComments);
+
+    const updatedEntries = entries.map(entry =>
+      entry.id === entryId
+        ? { ...entry, commentCount: entry.commentCount + 1 }
+        : entry
+    );
+    saveToStorage('kb_entries', updatedEntries);
+
+    set({ comments: updatedComments, entries: updatedEntries });
   },
 
   likeComment: (commentId) => {
-    const { comments } = get();
-    const updatedComments = comments.map(comment =>
-      comment.id === commentId
-        ? { ...comment, likeCount: comment.likeCount + 1 }
-        : comment
-    );
-    saveToStorage('kb_comments', updatedComments);
-    set({ comments: updatedComments });
+    const { comments, likedComments } = get();
+    const hasLiked = likedComments.some(lc => lc.commentId === commentId);
+
+    if (!hasLiked) {
+      const updatedComments = comments.map(comment =>
+        comment.id === commentId
+          ? { ...comment, likeCount: comment.likeCount + 1 }
+          : comment
+      );
+
+      const updatedLikedComments = [...likedComments, { commentId, timestamp: Date.now() }];
+
+      saveToStorage('kb_comments', updatedComments);
+      saveToStorage('kb_liked_comments', updatedLikedComments);
+      set({ comments: updatedComments, likedComments: updatedLikedComments });
+    }
+  },
+
+  hasLikedComment: (commentId) => {
+    return get().likedComments.some(lc => lc.commentId === commentId);
+  },
+
+  getCommentLikes: (commentId) => {
+    const comment = get().comments.find(c => c.id === commentId);
+    return comment?.likeCount || 0;
   },
 
   addCategory: (categoryData) => {
@@ -266,11 +367,15 @@ export const useStore = create<AppState>((set, get) => ({
 
   addAnnouncement: (announcementData) => {
     const { announcements } = get();
+    const pinnedCount = announcements.filter(a => a.isPinned).length;
+
     const newAnnouncement: Announcement = {
       ...announcementData,
       id: generateId(),
       createdAt: new Date().toISOString().split('T')[0],
+      pinOrder: announcementData.isPinned ? pinnedCount + 1 : undefined,
     };
+
     const updatedAnnouncements = [newAnnouncement, ...announcements];
     saveToStorage('kb_announcements', updatedAnnouncements);
     set({ announcements: updatedAnnouncements });
@@ -294,11 +399,31 @@ export const useStore = create<AppState>((set, get) => ({
 
   togglePinAnnouncement: (id) => {
     const { announcements } = get();
-    const updatedAnnouncements = announcements.map(ann =>
-      ann.id === id ? { ...ann, isPinned: !ann.isPinned } : ann
-    );
+    const pinnedCount = announcements.filter(a => a.isPinned && a.id !== id).length;
+
+    const updatedAnnouncements = announcements.map(ann => {
+      if (ann.id === id) {
+        if (!ann.isPinned) {
+          return { ...ann, isPinned: true, pinOrder: pinnedCount + 1 };
+        } else {
+          return { ...ann, isPinned: false, pinOrder: undefined };
+        }
+      }
+      return ann;
+    });
+
     saveToStorage('kb_announcements', updatedAnnouncements);
     set({ announcements: updatedAnnouncements });
+  },
+
+  getPinnedAnnouncements: () => {
+    return get().announcements
+      .filter(a => a.isPinned)
+      .sort((a, b) => (a.pinOrder || 0) - (b.pinOrder || 0));
+  },
+
+  getReviewsByEntryId: (entryId) => {
+    return get().reviews.filter(r => r.entryId === entryId);
   },
 
   incrementViewCount: (entryId) => {

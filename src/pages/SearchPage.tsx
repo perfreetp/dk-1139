@@ -8,7 +8,9 @@ import {
   Clock,
   Grid,
   List,
-  CheckCircle
+  CheckCircle,
+  Heart,
+  Award
 } from 'lucide-react';
 import { useStore } from '../store';
 import { EntryCard } from '../components/business';
@@ -20,18 +22,30 @@ export const SearchPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('keyword') || '');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [filterOnlyFavorite, setFilterOnlyFavorite] = useState(false);
+  const [filterOnlyOfficial, setFilterOnlyOfficial] = useState(false);
+  const [filterDepartment, setFilterDepartment] = useState('');
+  const [sortBy, setSortBy] = useState('recent');
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [sortBy, setSortBy] = useState('recent');
 
-  const { entries, categories, recentSearches, addRecentSearch } = useStore();
+  const { entries, categories, recentSearches, addRecentSearch, favorites } = useStore();
 
   const rootCategories = categories.filter(c => !c.parentId);
   const allTags = useMemo(() => {
     return Array.from(new Set(entries.flatMap((entry) => entry.tags))).slice(0, 20);
   }, [entries]);
+
+  const departments = [
+    { id: 'dept-1', name: '技术研发部' },
+    { id: 'dept-2', name: '产品设计部' },
+    { id: 'dept-3', name: '市场营销部' },
+    { id: 'dept-4', name: '人力资源部' },
+    { id: 'dept-5', name: '财务部' },
+    { id: 'dept-6', name: '行政部' },
+    { id: 'dept-7', name: '客户服务部' },
+    { id: 'dept-8', name: '质量管理部门' },
+  ];
 
   const getAllChildCategoryIds = (categoryId: string): string[] => {
     const childIds: string[] = [];
@@ -56,15 +70,16 @@ export const SearchPage: React.FC = () => {
       );
     }
 
-    if (selectedCategory) {
-      const allCategoryIds = [selectedCategory, ...getAllChildCategoryIds(selectedCategory)];
-      filtered = filtered.filter((entry) => allCategoryIds.includes(entry.categoryId));
+    if (filterOnlyFavorite) {
+      filtered = filtered.filter(entry => favorites.includes(entry.id));
     }
 
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter((entry) =>
-        selectedTags.some((tag) => entry.tags.includes(tag))
-      );
+    if (filterOnlyOfficial) {
+      filtered = filtered.filter(entry => entry.isOfficial);
+    }
+
+    if (filterDepartment) {
+      filtered = filtered.filter(entry => entry.departmentId === filterDepartment);
     }
 
     switch (sortBy) {
@@ -80,7 +95,7 @@ export const SearchPage: React.FC = () => {
     }
 
     return filtered;
-  }, [entries, searchQuery, selectedCategory, selectedTags, sortBy, categories]);
+  }, [entries, searchQuery, filterOnlyFavorite, filterOnlyOfficial, filterDepartment, sortBy, favorites]);
 
   useEffect(() => {
     const keyword = searchParams.get('keyword') || '';
@@ -104,18 +119,13 @@ export const SearchPage: React.FC = () => {
     }
   };
 
-  const handleTagToggle = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
-  };
-
   const clearFilters = () => {
-    setSelectedCategory('');
-    setSelectedTags([]);
+    setFilterOnlyFavorite(false);
+    setFilterOnlyOfficial(false);
+    setFilterDepartment('');
   };
 
-  const hasActiveFilters = selectedCategory || selectedTags.length > 0;
+  const hasActiveFilters = filterOnlyFavorite || filterOnlyOfficial || filterDepartment;
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -187,11 +197,7 @@ export const SearchPage: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900">筛选条件</h3>
               {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearFilters}
-                >
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X size={16} className="mr-1" />
                   清除筛选
                 </Button>
@@ -204,8 +210,7 @@ export const SearchPage: React.FC = () => {
                   分类
                 </label>
                 <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  onChange={(e) => {}}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">全部分类</option>
@@ -226,6 +231,24 @@ export const SearchPage: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
+                  部门
+                </label>
+                <select
+                  value={filterDepartment}
+                  onChange={(e) => setFilterDepartment(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">全部部门</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
                   排序方式
                 </label>
                 <select
@@ -240,24 +263,53 @@ export const SearchPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                标签
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {allTags.map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => handleTagToggle(tag)}
-                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      selectedTags.includes(tag)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
+            <div className="mt-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  快速筛选
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <label className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                    filterOnlyFavorite ? 'bg-red-50 border-2 border-red-200' : 'bg-slate-50 border-2 border-transparent'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={filterOnlyFavorite}
+                      onChange={(e) => setFilterOnlyFavorite(e.target.checked)}
+                      className="mr-3"
+                    />
+                    <Heart size={18} className="mr-2 text-red-500" />
+                    <span className="font-medium text-slate-700">只看收藏</span>
+                  </label>
+                  <label className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                    filterOnlyOfficial ? 'bg-amber-50 border-2 border-amber-200' : 'bg-slate-50 border-2 border-transparent'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={filterOnlyOfficial}
+                      onChange={(e) => setFilterOnlyOfficial(e.target.checked)}
+                      className="mr-3"
+                    />
+                    <Award size={18} className="mr-2 text-amber-500" />
+                    <span className="font-medium text-slate-700">只看官方</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  标签
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {allTags.map((tag) => (
+                    <button
+                      key={tag}
+                      className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200 transition-colors"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </Card>

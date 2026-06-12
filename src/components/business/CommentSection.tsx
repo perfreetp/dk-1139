@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Heart, Reply, Send } from 'lucide-react';
 import { Comment } from '../../types';
 import { Avatar, Button } from '../base';
@@ -11,12 +11,12 @@ interface CommentSectionProps {
 }
 
 export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddComment }) => {
-  const [newComment, setNewComment] = React.useState('');
-  const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
-  const [replyContent, setReplyContent] = React.useState('');
+  const [newComment, setNewComment] = useState('');
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const { likeComment } = useStore();
-  const [likedComments, setLikedComments] = React.useState<Set<string>>(new Set());
+  const { likeComment, addReply, hasLikedComment, getCommentLikes, comments: allComments } = useStore();
 
   const rootComments = comments.filter(c => !c.parentId);
 
@@ -27,18 +27,12 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
     }
   };
 
-  const handleReply = (parentId: string) => {
+  const handleReply = (parentId: string, entryId: string) => {
     if (replyContent.trim()) {
-      console.log('Reply to', parentId, ':', replyContent);
+      addReply(parentId, entryId, replyContent);
       setReplyContent('');
       setReplyingTo(null);
-    }
-  };
-
-  const handleLike = (commentId: string) => {
-    if (!likedComments.has(commentId)) {
-      likeComment(commentId);
-      setLikedComments(prev => new Set([...prev, commentId]));
+      setRefreshKey(prev => prev + 1);
     }
   };
 
@@ -60,7 +54,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
               rows={3}
             />
             <div className="flex justify-end mt-3">
-              <Button onClick={handleSubmit} size="sm">
+              <Button onClick={handleSubmit} size="sm" disabled={!newComment.trim()}>
                 <Send size={16} className="mr-2" />
                 发布评论
               </Button>
@@ -69,25 +63,27 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
         </div>
       </div>
 
-      <div className="space-y-4">
-        {rootComments.map((comment) => (
-          <CommentItem
-            key={comment.id}
-            comment={comment}
-            replies={comments.filter(c => c.parentId === comment.id)}
-            isReplying={replyingTo === comment.id}
-            onReply={() => setReplyingTo(comment.id)}
-            onCancelReply={() => {
-              setReplyingTo(null);
-              setReplyContent('');
-            }}
-            replyContent={replyContent}
-            onReplyContentChange={setReplyContent}
-            onSubmitReply={() => handleReply(comment.id)}
-            onLike={() => handleLike(comment.id)}
-            isLiked={likedComments.has(comment.id)}
-          />
-        ))}
+      <div className="space-y-4" key={refreshKey}>
+        {rootComments.map((comment) => {
+          const replies = comments.filter(c => c.parentId === comment.id);
+          return (
+            <CommentItem
+              key={comment.id}
+              comment={comment}
+              replies={replies}
+              isReplying={replyingTo === comment.id}
+              onReply={() => setReplyingTo(comment.id)}
+              onCancelReply={() => {
+                setReplyingTo(null);
+                setReplyContent('');
+              }}
+              replyContent={replyContent}
+              onReplyContentChange={setReplyContent}
+              onSubmitReply={() => handleReply(comment.id, comment.entryId)}
+              entryId={comment.entryId}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -102,8 +98,7 @@ interface CommentItemProps {
   replyContent: string;
   onReplyContentChange: (content: string) => void;
   onSubmitReply: () => void;
-  onLike: () => void;
-  isLiked: boolean;
+  entryId: string;
 }
 
 const CommentItem: React.FC<CommentItemProps> = ({
@@ -115,9 +110,44 @@ const CommentItem: React.FC<CommentItemProps> = ({
   replyContent,
   onReplyContentChange,
   onSubmitReply,
-  onLike,
-  isLiked,
+  entryId,
 }) => {
+  const { likeComment, hasLikedComment, getCommentLikes, comments: allComments } = useStore();
+  const [currentLiked, setCurrentLiked] = useState(hasLikedComment(comment.id));
+  const [currentLikeCount, setCurrentLikeCount] = useState(getCommentLikes(comment.id));
+
+  const handleLike = () => {
+    if (!currentLiked) {
+      likeComment(comment.id);
+      setCurrentLiked(true);
+      setCurrentLikeCount(prev => prev + 1);
+    }
+  };
+
+  const [replyStates, setReplyStates] = useState<Record<string, { liked: boolean; count: number }>>({});
+
+  useEffect(() => {
+    const states: Record<string, { liked: boolean; count: number }> = {};
+    replies.forEach(reply => {
+      states[reply.id] = {
+        liked: hasLikedComment(reply.id),
+        count: getCommentLikes(reply.id)
+      };
+    });
+    setReplyStates(states);
+  }, [replies, comments]);
+
+  const handleReplyLike = (replyId: string) => {
+    const state = replyStates[replyId];
+    if (state && !state.liked) {
+      likeComment(replyId);
+      setReplyStates(prev => ({
+        ...prev,
+        [replyId]: { liked: true, count: state.count + 1 }
+      }));
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4">
       <div className="flex space-x-3">
@@ -132,13 +162,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
           <p className="text-slate-700 mb-3">{comment.content}</p>
           <div className="flex items-center space-x-4">
             <button
-              onClick={onLike}
+              onClick={handleLike}
               className={`flex items-center space-x-1 text-sm transition-colors ${
-                isLiked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
+                currentLiked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
               }`}
             >
-              <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} />
-              <span>{comment.likeCount + (isLiked ? 1 : 0)}</span>
+              <Heart size={14} fill={currentLiked ? 'currentColor' : 'none'} />
+              <span>{currentLikeCount}</span>
             </button>
             <button
               onClick={onReply}
@@ -151,20 +181,43 @@ const CommentItem: React.FC<CommentItemProps> = ({
 
           {replies.length > 0 && (
             <div className="mt-4 space-y-3 pl-4 border-l-2 border-slate-100">
-              {replies.map((reply) => (
-                <div key={reply.id} className="flex space-x-2">
-                  <Avatar src={reply.userAvatar} name={reply.userName} size="sm" />
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="font-semibold text-sm text-slate-900">{reply.userName}</span>
-                      <span className="text-xs text-slate-500">
-                        {formatRelativeTime(reply.createdAt)}
-                      </span>
+              {replies.map((reply) => {
+                const replyState = replyStates[reply.id] || { liked: false, count: 0 };
+                return (
+                  <div key={reply.id} className="bg-slate-50 rounded-lg p-3">
+                    <div className="flex space-x-2">
+                      <Avatar src={reply.userAvatar} name={reply.userName} size="sm" />
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="font-semibold text-sm text-slate-900">{reply.userName}</span>
+                          <span className="text-xs text-slate-500">
+                            {formatRelativeTime(reply.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-700 mb-2">{reply.content}</p>
+                        <div className="flex items-center space-x-4">
+                          <button
+                            onClick={() => handleReplyLike(reply.id)}
+                            className={`flex items-center space-x-1 text-xs transition-colors ${
+                              replyState.liked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
+                            }`}
+                          >
+                            <Heart size={12} fill={replyState.liked ? 'currentColor' : 'none'} />
+                            <span>{replyState.count}</span>
+                          </button>
+                          <button
+                            onClick={() => setReplyingTo(reply.id)}
+                            className="flex items-center space-x-1 text-xs text-slate-500 hover:text-blue-600 transition-colors"
+                          >
+                            <Reply size={12} />
+                            <span>回复</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm text-slate-700">{reply.content}</p>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -176,12 +229,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 placeholder="写下你的回复..."
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                 rows={2}
+                autoFocus
               />
               <div className="flex justify-end space-x-2 mt-2">
                 <Button variant="ghost" size="sm" onClick={onCancelReply}>
                   取消
                 </Button>
-                <Button size="sm" onClick={onSubmitReply}>
+                <Button size="sm" onClick={onSubmitReply} disabled={!replyContent.trim()}>
                   回复
                 </Button>
               </div>

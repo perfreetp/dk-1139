@@ -24,11 +24,12 @@ import { formatDate, formatFileSize } from '../utils/formatDate';
 
 export const EntryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { getEntryById, toggleFavorite, isFavorite, comments, addComment, incrementViewCount, currentUser } = useStore();
+  const { getEntryById, toggleFavorite, isFavorite, comments, addComment, incrementViewCount, currentUser, addReply } = useStore();
   const [entry, setEntry] = useState(getEntryById(id || ''));
   const [showShareToast, setShowShareToast] = useState(false);
   const [showFavoriteToast, setShowFavoriteToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const isFav = entry ? isFavorite(entry.id) : false;
 
@@ -132,6 +133,7 @@ export const EntryDetailPage: React.FC = () => {
     });
     setToastMessage('评论发布成功');
     setShowShareToast(true);
+    setRefreshKey(prev => prev + 1);
     setTimeout(() => setShowShareToast(false), 2000);
   };
 
@@ -272,7 +274,7 @@ export const EntryDetailPage: React.FC = () => {
               </Card>
             )}
 
-            <CommentSection comments={entryComments} onAddComment={handleAddComment} />
+            <CommentSection key={refreshKey} comments={entryComments} onAddComment={handleAddComment} />
           </div>
 
           <div className="space-y-6">

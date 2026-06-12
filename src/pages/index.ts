@@ -5,3 +5,4 @@ export { SearchPage } from './SearchPage';
 export { EditorPage } from './EditorPage';
 export { ReviewPage } from './ReviewPage';
 export { AdminPage } from './AdminPage';
+export { MySubmissionsPage } from './MySubmissionsPage';

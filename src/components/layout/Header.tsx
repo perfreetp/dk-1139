@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Menu, X, Bell, User, LogOut } from 'lucide-react';
+import { Search, Menu, X, Bell, User, LogOut, FileText, ChevronDown } from 'lucide-react';
 import { useStore } from '../../store';
 import { Avatar, Button } from '../base';
 
@@ -53,20 +53,37 @@ export const Header: React.FC = () => {
               分类目录
             </Link>
             {currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin') && (
-              <Link
-                to="/editor"
-                className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
-              >
-                编辑工作台
-              </Link>
+              <>
+                <Link
+                  to="/editor"
+                  className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
+                >
+                  编辑工作台
+                </Link>
+                <Link
+                  to="/submissions"
+                  className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium flex items-center"
+                >
+                  <FileText size={16} className="mr-1" />
+                  我的提交
+                </Link>
+              </>
             )}
             {currentUser && currentUser.role === 'admin' && (
-              <Link
-                to="/review"
-                className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
-              >
-                审核中心
-              </Link>
+              <>
+                <Link
+                  to="/review"
+                  className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
+                >
+                  审核中心
+                </Link>
+                <Link
+                  to="/admin"
+                  className="px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
+                >
+                  管理后台
+                </Link>
+              </>
             )}
           </nav>
 
@@ -99,6 +116,7 @@ export const Header: React.FC = () => {
                   <span className="hidden sm:block text-sm font-medium text-slate-700">
                     {currentUser.name}
                   </span>
+                  <ChevronDown size={16} className="text-slate-500" />
                 </button>
 
                 {isUserMenuOpen && (
@@ -110,6 +128,24 @@ export const Header: React.FC = () => {
                         {currentUser.role === 'admin' ? '管理员' : currentUser.role === 'editor' ? '编辑' : '员工'}
                       </span>
                     </div>
+                    {(currentUser.role === 'editor' || currentUser.role === 'admin') && (
+                      <>
+                        <Link
+                          to="/editor"
+                          className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          <FileText size={16} className="mr-2" />
+                          创建新词条
+                        </Link>
+                        <Link
+                          to="/submissions"
+                          className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          <FileText size={16} className="mr-2" />
+                          我的提交
+                        </Link>
+                      </>
+                    )}
                     <Link
                       to="/profile"
                       className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
@@ -150,20 +186,36 @@ export const Header: React.FC = () => {
               分类目录
             </Link>
             {currentUser && (currentUser.role === 'editor' || currentUser.role === 'admin') && (
-              <Link
-                to="/editor"
-                className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
-              >
-                编辑工作台
-              </Link>
+              <>
+                <Link
+                  to="/editor"
+                  className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                >
+                  编辑工作台
+                </Link>
+                <Link
+                  to="/submissions"
+                  className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                >
+                  我的提交
+                </Link>
+              </>
             )}
             {currentUser && currentUser.role === 'admin' && (
-              <Link
-                to="/review"
-                className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
-              >
-                审核中心
-              </Link>
+              <>
+                <Link
+                  to="/review"
+                  className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                >
+                  审核中心
+                </Link>
+                <Link
+                  to="/admin"
+                  className="block px-4 py-2 text-slate-700 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+                >
+                  管理后台
+                </Link>
+              </>
             )}
           </nav>
           <form onSubmit={handleSearch} className="px-4 py-3 border-t border-slate-100">
