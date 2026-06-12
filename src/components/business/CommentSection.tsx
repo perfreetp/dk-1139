@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Heart, Reply, Send } from 'lucide-react';
+import { Heart, Reply, Send, TrendingUp, Clock, MessageSquare } from 'lucide-react';
 import { Comment } from '../../types';
 import { Avatar, Button } from '../base';
 import { formatRelativeTime } from '../../utils/formatDate';
@@ -14,8 +14,10 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [sortBy, setSortBy] = useState<'latest' | 'hottest'>('latest');
+  const [filterMine, setFilterMine] = useState(false);
 
-  const { addReply } = useStore();
+  const { addReply, currentUser } = useStore();
 
   const handleSubmit = () => {
     if (newComment.trim() && onAddComment) {
@@ -43,13 +45,68 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
     return map;
   }, [comments]);
 
-  const rootComments = commentMap['root'] || [];
+  const userId = currentUser?.id || 'user-1';
+
+  const filteredAndSortedComments = useMemo(() => {
+    let filtered = commentMap['root'] || [];
+
+    if (filterMine) {
+      filtered = filtered.filter(comment =>
+        comment.userId === userId ||
+        comments.some(reply => reply.parentId === comment.id && reply.userId === userId)
+      );
+    }
+
+    if (sortBy === 'latest') {
+      filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else {
+      filtered.sort((a, b) => {
+        const aLikes = comments.filter(c => c.parentId === a.id || c.id === a.id).reduce((sum, c) => sum + c.likeCount, 0);
+        const bLikes = comments.filter(c => c.parentId === b.id || c.id === b.id).reduce((sum, c) => sum + c.likeCount, 0);
+        return bLikes - aLikes;
+      });
+    }
+
+    return filtered;
+  }, [commentMap, filterMine, sortBy, userId, comments]);
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-slate-900">
-        评论 ({comments.length})
-      </h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-slate-900">
+          评论 ({comments.length})
+        </h3>
+        <div className="flex items-center space-x-2">
+          <div className="flex bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setSortBy('latest')}
+              className={`px-3 py-1 rounded-md text-sm transition-colors flex items-center ${
+                sortBy === 'latest' ? 'bg-white shadow text-blue-600' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock size={14} className="mr-1" />
+              最新
+            </button>
+            <button
+              onClick={() => setSortBy('hottest')}
+              className={`px-3 py-1 rounded-md text-sm transition-colors flex items-center ${
+                sortBy === 'hottest' ? 'bg-white shadow text-red-600' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TrendingUp size={14} className="mr-1" />
+              最热
+            </button>
+          </div>
+          <Button
+            variant={filterMine ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilterMine(!filterMine)}
+          >
+            <MessageSquare size={14} className="mr-1" />
+            我的参与
+          </Button>
+        </div>
+      </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex space-x-3">
@@ -73,19 +130,20 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
       </div>
 
       <div className="space-y-4" key={refreshKey}>
-        {rootComments.map((comment) => (
+        {filteredAndSortedComments.map((comment) => (
           <CommentItem
-             key={comment.id}
-             comment={comment}
-             commentMap={commentMap}
-             replyingTo={replyingTo}
-             onReply={(id, name) => setReplyingTo({ id, name })}
-             onCancelReply={() => {
-               setReplyingTo(null);
-             }}
-             onSubmitReply={(content) => handleReply(comment.id, comment.entryId, content)}
-             depth={0}
-           />
+            key={comment.id}
+            comment={comment}
+            commentMap={commentMap}
+            replyingTo={replyingTo}
+            onReply={(id, name) => setReplyingTo({ id, name })}
+            onCancelReply={() => {
+              setReplyingTo(null);
+            }}
+            onSubmitReply={(content) => handleReply(comment.id, comment.entryId, content)}
+            onRefresh={() => setRefreshKey(prev => prev + 1)}
+            depth={0}
+          />
         ))}
       </div>
     </div>
@@ -99,6 +157,7 @@ interface CommentItemProps {
   onReply: (id: string, name: string) => void;
   onCancelReply: () => void;
   onSubmitReply: (content: string) => void;
+  onRefresh: () => void;
   depth: number;
 }
 
@@ -109,9 +168,10 @@ const CommentItem: React.FC<CommentItemProps> = ({
   onReply,
   onCancelReply,
   onSubmitReply,
+  onRefresh,
   depth,
 }) => {
-  const { likeComment, hasLikedComment, getCommentLikes } = useStore();
+  const { likeComment, hasLikedComment, getCommentLikes, addReply } = useStore();
   const [currentLiked, setCurrentLiked] = useState(hasLikedComment(comment.id));
   const [currentLikeCount, setCurrentLikeCount] = useState(getCommentLikes(comment.id));
   const [localReplyContent, setLocalReplyContent] = useState('');
@@ -139,10 +199,11 @@ const CommentItem: React.FC<CommentItemProps> = ({
     }
   };
 
-  const handleNestedReply = (parentId: string, entryId: string) => {
+  const handleNestedReply = () => {
     if (localReplyContent.trim()) {
-      useStore.getState().addReply(parentId, entryId, localReplyContent);
+      addReply(comment.id, comment.entryId, localReplyContent);
       setLocalReplyContent('');
+      onRefresh();
     }
   };
 
@@ -211,12 +272,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
                    replyingTo={replyingTo}
                    onReply={onReply}
                    onCancelReply={onCancelReply}
-                   onSubmitReply={() => handleNestedReply(reply.id, reply.entryId)}
+                   onSubmitReply={onSubmitReply}
+                   onRefresh={onRefresh}
                    depth={depth + 1}
                  />
                ))}
-             </div>
-           )}
+            </div>
+          )}
         </div>
       </div>
     </div>

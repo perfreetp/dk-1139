@@ -25,19 +25,44 @@ export const ReviewPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
+  const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterAuthor, setFilterAuthor] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+
   const { entries, categories, approveEntry, rejectEntry, getReviewsByEntryId } = useStore();
 
+  const applyFilters = (entryList: typeof entries) => {
+    return entryList.filter(entry => {
+      if (filterAuthor && !entry.authorName.toLowerCase().includes(filterAuthor.toLowerCase())) {
+        return false;
+      }
+      if (filterCategory && entry.categoryId !== filterCategory) {
+        return false;
+      }
+      if (filterDateFrom && entry.updatedAt < filterDateFrom) {
+        return false;
+      }
+      if (filterDateTo && entry.updatedAt > filterDateTo) {
+        return false;
+      }
+      return true;
+    });
+  };
+
   const pendingEntries = useMemo(() =>
-    entries.filter((e) => e.status === 'pending'),
-    [entries]
+    applyFilters(entries.filter((e) => e.status === 'pending')),
+    [entries, filterAuthor, filterCategory, filterDateFrom, filterDateTo]
   );
   const approvedEntries = useMemo(() =>
-    entries.filter((e) => e.status === 'approved'),
-    [entries]
+    applyFilters(entries.filter((e) => e.status === 'approved')),
+    [entries, filterAuthor, filterCategory, filterDateFrom, filterDateTo]
   );
   const rejectedEntries = useMemo(() =>
-    entries.filter((e) => e.status === 'rejected'),
-    [entries]
+    applyFilters(entries.filter((e) => e.status === 'rejected')),
+    [entries, filterAuthor, filterCategory, filterDateFrom, filterDateTo]
   );
 
   const currentEntries =
@@ -70,6 +95,51 @@ export const ReviewPage: React.FC = () => {
     showNotification('词条已驳回', 'success');
     setReviewComment('');
     setSelectedEntry(null);
+  };
+
+  const handleBatchApprove = () => {
+    if (selectedEntries.length === 0) {
+      showNotification('请先选择要处理的词条', 'error');
+      return;
+    }
+    selectedEntries.forEach(id => {
+      approveEntry(id, '批量通过');
+    });
+    showNotification(`已通过 ${selectedEntries.length} 个词条`, 'success');
+    setSelectedEntries([]);
+  };
+
+  const handleBatchReject = () => {
+    if (selectedEntries.length === 0) {
+      showNotification('请先选择要处理的词条', 'error');
+      return;
+    }
+    if (!reviewComment.trim()) {
+      showNotification('请填写驳回原因', 'error');
+      return;
+    }
+    selectedEntries.forEach(id => {
+      rejectEntry(id, reviewComment);
+    });
+    showNotification(`已驳回 ${selectedEntries.length} 个词条`, 'success');
+    setSelectedEntries([]);
+    setReviewComment('');
+  };
+
+  const toggleSelectEntry = (entryId: string) => {
+    setSelectedEntries(prev =>
+      prev.includes(entryId)
+        ? prev.filter(id => id !== entryId)
+        : [...prev, entryId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedEntries.length === currentEntries.length) {
+      setSelectedEntries([]);
+    } else {
+      setSelectedEntries(currentEntries.map(e => e.id));
+    }
   };
 
   return (
@@ -144,18 +214,111 @@ export const ReviewPage: React.FC = () => {
               </button>
             </div>
           </div>
-          <Button variant="outline">
-            <Filter size={18} className="mr-2" />
-            筛选
-          </Button>
+          {activeTab === 'pending' && (
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <Filter size={18} className="mr-2" />
+                筛选
+              </Button>
+              {selectedEntries.length > 0 && (
+                <>
+                  <Button onClick={handleBatchApprove}>
+                    <CheckCircle size={18} className="mr-2" />
+                    批量通过 ({selectedEntries.length})
+                  </Button>
+                  <Button variant="danger" onClick={handleBatchReject}>
+                    <XCircle size={18} className="mr-2" />
+                    批量驳回 ({selectedEntries.length})
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
+
+        {showFilters && activeTab === 'pending' && (
+          <Card className="p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">作者</label>
+                <Input
+                  placeholder="输入作者名称"
+                  value={filterAuthor}
+                  onChange={(e) => setFilterAuthor(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">分类</label>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">全部分类</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">提交时间从</label>
+                <Input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">提交时间至</label>
+                <Input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+            {(filterAuthor || filterCategory || filterDateFrom || filterDateTo) && (
+              <div className="mt-3 flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilterAuthor('');
+                    setFilterCategory('');
+                    setFilterDateFrom('');
+                    setFilterDateTo('');
+                  }}
+                >
+                  清除筛选
+                </Button>
+              </div>
+            )}
+          </Card>
+        )}
 
         {currentEntries.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1 space-y-4">
+              {activeTab === 'pending' && (
+                <div className="flex items-center space-x-2 p-3 bg-slate-50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={selectedEntries.length === currentEntries.length && currentEntries.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-slate-700">
+                    全选 (已选 {selectedEntries.length}/{currentEntries.length})
+                  </span>
+                </div>
+              )}
               {currentEntries.map((entry) => {
                 const reviews = getReviewsByEntryId(entry.id);
                 const latestReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
+                const isSelected = selectedEntries.includes(entry.id);
 
                 return (
                   <Card
@@ -163,66 +326,79 @@ export const ReviewPage: React.FC = () => {
                     hover
                     className={`p-4 cursor-pointer transition-all ${
                       selectedEntry === entry.id ? 'ring-2 ring-blue-500 shadow-lg' : ''
-                    }`}
+                    } ${isSelected ? 'ring-2 ring-green-500 bg-green-50' : ''}`}
                     onClick={() => setSelectedEntry(entry.id)}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-semibold text-slate-900 line-clamp-2 flex-1">
-                        {entry.title}
-                      </h3>
+                    <div className="flex items-start space-x-3">
                       {activeTab === 'pending' && (
-                        <Badge variant="warning" className="ml-2">待审核</Badge>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectEntry(entry.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 mt-1 text-blue-600 rounded focus:ring-blue-500"
+                        />
                       )}
-                      {activeTab === 'approved' && (
-                        <Badge variant="success" className="ml-2">已通过</Badge>
-                      )}
-                      {activeTab === 'rejected' && (
-                        <Badge variant="danger" className="ml-2">已驳回</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600 line-clamp-2 mb-3">
-                      {entry.summary}
-                    </p>
-                    <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                      <div className="flex items-center space-x-2">
-                        <Avatar src="" name={entry.authorName} size="sm" />
-                        <span>{entry.authorName}</span>
-                      </div>
-                      <span>{formatRelativeTime(entry.updatedAt)}</span>
-                    </div>
-
-                    {(activeTab === 'approved' || activeTab === 'rejected') && latestReview && (
-                      <div className={`mt-3 pt-3 border-t ${
-                        latestReview.action === 'approve' ? 'border-green-200' : 'border-red-200'
-                      }`}>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <div className="flex items-center space-x-1">
-                            {latestReview.action === 'approve' ? (
-                              <CheckCircle size={12} className="text-green-600" />
-                            ) : (
-                              <XCircle size={12} className="text-red-600" />
-                            )}
-                            <span className={latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'}>
-                              {latestReview.action === 'approve' ? '通过' : '驳回'}
-                            </span>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="font-semibold text-slate-900 line-clamp-2 flex-1">
+                            {entry.title}
+                          </h3>
+                          {activeTab === 'pending' && (
+                            <Badge variant="warning" className="ml-2">待审核</Badge>
+                          )}
+                          {activeTab === 'approved' && (
+                            <Badge variant="success" className="ml-2">已通过</Badge>
+                          )}
+                          {activeTab === 'rejected' && (
+                            <Badge variant="danger" className="ml-2">已驳回</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-600 line-clamp-2 mb-3">
+                          {entry.summary}
+                        </p>
+                        <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                          <div className="flex items-center space-x-2">
+                            <Avatar src="" name={entry.authorName} size="sm" />
+                            <span>{entry.authorName}</span>
                           </div>
-                          <span className="text-slate-500">
-                            {formatDate(latestReview.createdAt)}
-                          </span>
+                          <span>{formatRelativeTime(entry.updatedAt)}</span>
                         </div>
-                        <div className="flex items-center space-x-1 text-xs text-slate-600 mb-1">
-                          <User size={12} />
-                          <span>处理人: {latestReview.reviewerName}</span>
-                        </div>
-                        {latestReview.comment && (
-                          <p className={`text-xs line-clamp-2 ${
-                            latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'
+
+                        {(activeTab === 'approved' || activeTab === 'rejected') && latestReview && (
+                          <div className={`mt-3 pt-3 border-t ${
+                            latestReview.action === 'approve' ? 'border-green-200' : 'border-red-200'
                           }`}>
-                            意见: {latestReview.comment}
-                          </p>
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <div className="flex items-center space-x-1">
+                                {latestReview.action === 'approve' ? (
+                                  <CheckCircle size={12} className="text-green-600" />
+                                ) : (
+                                  <XCircle size={12} className="text-red-600" />
+                                )}
+                                <span className={latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'}>
+                                  {latestReview.action === 'approve' ? '通过' : '驳回'}
+                                </span>
+                              </div>
+                              <span className="text-slate-500">
+                                {formatDate(latestReview.createdAt)}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-1 text-xs text-slate-600 mb-1">
+                              <User size={12} />
+                              <span>处理人: {latestReview.reviewerName}</span>
+                            </div>
+                            {latestReview.comment && (
+                              <p className={`text-xs line-clamp-2 ${
+                                latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'
+                              }`}>
+                                意见: {latestReview.comment}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </Card>
                 );
               })}

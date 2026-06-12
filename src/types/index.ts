@@ -81,6 +81,7 @@ export interface Announcement {
   createdAt: string;
   authorId: string;
   pinOrder?: number;
+  scheduledAt?: string;
 }
 
 export interface Version {
@@ -102,6 +103,19 @@ export interface Review {
   action: 'approve' | 'reject';
   comment: string;
   createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  type: 'reply' | 'like';
+  entryId: string;
+  entryTitle: string;
+  commentId: string;
+  commentContent: string;
+  fromUserId: string;
+  fromUserName: string;
+  createdAt: string;
+  isRead: boolean;
 }
 
 export interface SearchResult {

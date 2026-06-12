@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Entry, SearchFilters, Comment, Category, Announcement, Review } from '../types';
+import { User, Entry, SearchFilters, Comment, Category, Announcement, Review, Notification } from '../types';
 import { getCurrentUser } from '../data/mockUsers';
 import { mockEntries as initialEntries } from '../data/mockEntries';
 import { mockCategories as initialCategories } from '../data/mockCategories';
@@ -22,6 +22,7 @@ interface AppState {
   announcements: Announcement[];
   reviews: Review[];
   likedComments: LikedComment[];
+  notifications: Notification[];
 
   setCurrentUser: (user: User | null) => void;
   login: () => void;
@@ -54,8 +55,14 @@ interface AppState {
   deleteAnnouncement: (id: string) => void;
   togglePinAnnouncement: (id: string) => void;
   getPinnedAnnouncements: () => Announcement[];
+  reorderPinnedAnnouncements: (announcementIds: string[]) => void;
 
   getReviewsByEntryId: (entryId: string) => Review[];
+
+  addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'isRead'>) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  getUnreadNotificationCount: () => number;
 
   incrementViewCount: (entryId: string) => void;
 }
@@ -90,6 +97,7 @@ export const useStore = create<AppState>((set, get) => ({
   announcements: loadFromStorage('kb_announcements', initialAnnouncements),
   reviews: loadFromStorage('kb_reviews', []),
   likedComments: loadFromStorage('kb_liked_comments', []),
+  notifications: loadFromStorage('kb_notifications', []),
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -283,7 +291,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addReply: (parentId, entryId, content) => {
-    const { currentUser, comments, entries } = get();
+    const { currentUser, comments, entries, addNotification } = get();
     const newReply: Comment = {
       id: generateId(),
       entryId,
@@ -295,6 +303,21 @@ export const useStore = create<AppState>((set, get) => ({
       createdAt: new Date().toISOString().split('T')[0],
       likeCount: 0,
     };
+
+    const parentComment = comments.find(c => c.id === parentId);
+    const entry = entries.find(e => e.id === entryId);
+
+    if (parentComment && parentComment.userId !== currentUser?.id && entry) {
+      addNotification({
+        type: 'reply',
+        entryId,
+        entryTitle: entry.title,
+        commentId: parentComment.id,
+        commentContent: parentComment.content,
+        fromUserId: currentUser?.id || 'user-1',
+        fromUserName: currentUser?.name || '匿名用户',
+      });
+    }
 
     const updatedComments = [newReply, ...comments];
     saveToStorage('kb_comments', updatedComments);
@@ -310,14 +333,29 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   likeComment: (commentId) => {
-    const { comments, likedComments } = get();
+    const { comments, likedComments, currentUser, entries, addNotification } = get();
     const hasLiked = likedComments.some(lc => lc.commentId === commentId);
 
     if (!hasLiked) {
-      const updatedComments = comments.map(comment =>
-        comment.id === commentId
-          ? { ...comment, likeCount: comment.likeCount + 1 }
-          : comment
+      const comment = comments.find(c => c.id === commentId);
+      const entry = comment ? entries.find(e => e.id === comment.entryId) : null;
+
+      if (comment && comment.userId !== currentUser?.id && entry) {
+        addNotification({
+          type: 'like',
+          entryId: comment.entryId,
+          entryTitle: entry.title,
+          commentId: comment.id,
+          commentContent: comment.content,
+          fromUserId: currentUser?.id || 'user-1',
+          fromUserName: currentUser?.name || '匿名用户',
+        });
+      }
+
+      const updatedComments = comments.map(c =>
+        c.id === commentId
+          ? { ...c, likeCount: c.likeCount + 1 }
+          : c
       );
 
       const updatedLikedComments = [...likedComments, { commentId, timestamp: Date.now() }];
@@ -430,8 +468,57 @@ export const useStore = create<AppState>((set, get) => ({
       .sort((a, b) => (a.pinOrder || 0) - (b.pinOrder || 0));
   },
 
+  reorderPinnedAnnouncements: (announcementIds: string[]) => {
+    const { announcements } = get();
+    const updatedAnnouncements = announcements.map(ann => {
+      if (ann.isPinned) {
+        const newOrder = announcementIds.indexOf(ann.id);
+        if (newOrder !== -1) {
+          return { ...ann, pinOrder: newOrder + 1 };
+        }
+      }
+      return ann;
+    });
+    saveToStorage('kb_announcements', updatedAnnouncements);
+    set({ announcements: updatedAnnouncements });
+  },
+
   getReviewsByEntryId: (entryId) => {
     return get().reviews.filter(r => r.entryId === entryId);
+  },
+
+  addNotification: (notificationData) => {
+    const newNotification: Notification = {
+      ...notificationData,
+      id: generateId(),
+      createdAt: new Date().toISOString().split('T')[0],
+      isRead: false,
+    };
+
+    const { notifications } = get();
+    const updatedNotifications = [newNotification, ...notifications];
+    saveToStorage('kb_notifications', updatedNotifications);
+    set({ notifications: updatedNotifications });
+  },
+
+  markNotificationRead: (id) => {
+    const { notifications } = get();
+    const updatedNotifications = notifications.map(n =>
+      n.id === id ? { ...n, isRead: true } : n
+    );
+    saveToStorage('kb_notifications', updatedNotifications);
+    set({ notifications: updatedNotifications });
+  },
+
+  markAllNotificationsRead: () => {
+    const { notifications } = get();
+    const updatedNotifications = notifications.map(n => ({ ...n, isRead: true }));
+    saveToStorage('kb_notifications', updatedNotifications);
+    set({ notifications: updatedNotifications });
+  },
+
+  getUnreadNotificationCount: () => {
+    return get().notifications.filter(n => !n.isRead).length;
   },
 
   incrementViewCount: (entryId) => {

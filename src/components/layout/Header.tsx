@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Menu, X, Bell, User, LogOut, FileText, ChevronDown } from 'lucide-react';
+import { Search, Menu, X, User, LogOut, FileText, ChevronDown } from 'lucide-react';
 import { useStore } from '../../store';
 import { Avatar, Button } from '../base';
+import { NotificationPanel } from './NotificationPanel';
 
 export const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -101,10 +102,7 @@ export const Header: React.FC = () => {
               </div>
             </form>
 
-            <button className="relative p-2 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors">
-              <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            <NotificationPanel />
 
             {currentUser ? (
               <div className="relative">

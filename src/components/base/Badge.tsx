@@ -4,11 +4,13 @@ import { twMerge } from 'tailwind-merge';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export const Badge: React.FC<BadgeProps> = ({
   className,
   variant = 'default',
+  size = 'md',
   children,
   ...props
 }) => {
@@ -20,12 +22,19 @@ export const Badge: React.FC<BadgeProps> = ({
     danger: 'bg-red-100 text-red-700 border-red-200',
   };
 
+  const sizes = {
+    sm: 'px-1.5 py-0.5 text-[10px]',
+    md: 'px-2 py-1 text-xs',
+    lg: 'px-2.5 py-1 text-sm',
+  };
+
   return (
     <span
       className={twMerge(
         clsx(
-          'inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border',
+          'inline-flex items-center font-medium rounded-md border',
           variants[variant],
+          sizes[size],
           className
         )
       )}

@@ -37,8 +37,9 @@ export const AdminPage: React.FC = () => {
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementPriority, setAnnouncementPriority] = useState<'normal' | 'high' | 'urgent'>('normal');
   const [announcementPinned, setAnnouncementPinned] = useState(false);
+  const [announcementScheduledAt, setAnnouncementScheduledAt] = useState('');
 
-  const { entries, categories, announcements, addCategory, updateCategory, deleteCategory, addAnnouncement, updateAnnouncement, deleteAnnouncement, togglePinAnnouncement, getPinnedAnnouncements } = useStore();
+  const { entries, categories, announcements, addCategory, updateCategory, deleteCategory, addAnnouncement, updateAnnouncement, deleteAnnouncement, togglePinAnnouncement, getPinnedAnnouncements, reorderPinnedAnnouncements } = useStore();
 
   const rootCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
   const hotSearches = ['请假制度', '差旅报销', '采购流程', '入职指南', '项目管理'];
@@ -108,12 +109,14 @@ export const AdminPage: React.FC = () => {
       setAnnouncementContent(announcement.content);
       setAnnouncementPriority(announcement.priority);
       setAnnouncementPinned(announcement.isPinned);
+      setAnnouncementScheduledAt(announcement.scheduledAt || '');
     } else {
       setEditingAnnouncement(null);
       setAnnouncementTitle('');
       setAnnouncementContent('');
       setAnnouncementPriority('normal');
       setAnnouncementPinned(false);
+      setAnnouncementScheduledAt('');
     }
     setShowAnnouncementForm(true);
   };
@@ -130,6 +133,7 @@ export const AdminPage: React.FC = () => {
         content: announcementContent.trim(),
         priority: announcementPriority,
         isPinned: announcementPinned,
+        scheduledAt: announcementScheduledAt || undefined,
       });
       showNotification('公告更新成功');
     } else {
@@ -139,12 +143,29 @@ export const AdminPage: React.FC = () => {
         priority: announcementPriority,
         isPinned: announcementPinned,
         authorId: 'user-1',
+        scheduledAt: announcementScheduledAt || undefined,
       });
       showNotification('公告发布成功');
     }
 
     setShowAnnouncementForm(false);
     setEditingAnnouncement(null);
+  };
+
+  const handleMoveUp = (index: number) => {
+    if (index === 0) return;
+    const newOrder = [...pinnedAnnouncements];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    reorderPinnedAnnouncements(newOrder.map(a => a.id));
+    showNotification('置顶顺序已调整');
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index === pinnedAnnouncements.length - 1) return;
+    const newOrder = [...pinnedAnnouncements];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    reorderPinnedAnnouncements(newOrder.map(a => a.id));
+    showNotification('置顶顺序已调整');
   };
 
   const renderOverview = () => (
@@ -401,7 +422,7 @@ export const AdminPage: React.FC = () => {
                 rows={5}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">优先级</label>
                 <select
@@ -413,6 +434,15 @@ export const AdminPage: React.FC = () => {
                   <option value="high">重要</option>
                   <option value="urgent">紧急</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">预约发布时间</label>
+                <Input
+                  type="datetime-local"
+                  value={announcementScheduledAt}
+                  onChange={(e) => setAnnouncementScheduledAt(e.target.value)}
+                  placeholder="留空则立即发布"
+                />
               </div>
               <div className="flex items-center">
                 <label className="flex items-center mt-6">
@@ -480,6 +510,26 @@ export const AdminPage: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
+                  {announcement.isPinned && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleMoveUp(index)}
+                        disabled={index === 0}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleMoveDown(index)}
+                        disabled={index === pinnedAnnouncements.length - 1}
+                      >
+                        ↓
+                      </Button>
+                    </>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => handleTogglePin(announcement.id)}>
                     {announcement.isPinned ? (
                       <>
