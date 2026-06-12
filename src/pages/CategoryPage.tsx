@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ChevronRight,
@@ -6,8 +6,6 @@ import {
   Search,
   Grid,
   List,
-  SortAsc,
-  Filter,
   Building2,
   GitBranch,
   Lightbulb,
@@ -21,8 +19,7 @@ import {
   Trophy,
   AlertCircle
 } from 'lucide-react';
-import { mockCategories, getCategoriesByParentId, getRootCategories, getCategoryById } from '../data/mockCategories';
-import { getEntriesByCategoryId } from '../data/mockEntries';
+import { useStore } from '../store';
 import { EntryCard } from '../components/business';
 import { Card, Input, Button, Tag } from '../components/base';
 
@@ -33,9 +30,9 @@ export const CategoryPage: React.FC = () => {
   const [sortBy, setSortBy] = useState('recent');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const rootCategories = getRootCategories();
-  const selectedCategory = id ? getCategoryById(id) : null;
-  const entries = id ? getEntriesByCategoryId(id) : [];
+  const { categories, entries } = useStore();
+  const rootCategories = categories.filter(c => !c.parentId);
+  const selectedCategory = id ? categories.find(c => c.id === id) : null;
 
   const getCategoryIcon = (iconName: string) => {
     const icons: Record<string, React.ReactNode> = {
@@ -55,19 +52,40 @@ export const CategoryPage: React.FC = () => {
     return icons[iconName] || <Building2 size={20} />;
   };
 
+  const getAllChildCategoryIds = (categoryId: string): string[] => {
+    const childIds: string[] = [];
+    const directChildren = categories.filter(c => c.parentId === categoryId);
+    directChildren.forEach(child => {
+      childIds.push(child.id);
+      childIds.push(...getAllChildCategoryIds(child.id));
+    });
+    return childIds;
+  };
+
+  const getEntriesForCategory = (categoryId: string): typeof entries => {
+    const allCategoryIds = [categoryId, ...getAllChildCategoryIds(categoryId)];
+    return entries.filter(entry => allCategoryIds.includes(entry.categoryId));
+  };
+
+  const categoryEntries = useMemo(() => {
+    if (!id) return [];
+    return getEntriesForCategory(id);
+  }, [id, categories, entries]);
+
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories((prev) =>
       prev.includes(categoryId)
-        ? prev.filter((id) => id !== categoryId)
+        ? prev.filter((cid) => cid !== categoryId)
         : [...prev, categoryId]
     );
   };
 
-  const renderCategoryTree = (categories: typeof mockCategories, level: number = 0) => {
-    return categories.map((category) => {
-      const hasChildren = getCategoriesByParentId(category.id).length > 0;
+  const renderCategoryTree = (parentCategories: typeof categories, level: number = 0) => {
+    return parentCategories.map((category) => {
+      const children = categories.filter(c => c.parentId === category.id);
+      const hasChildren = children.length > 0;
       const isExpanded = expandedCategories.includes(category.id);
-      const children = getCategoriesByParentId(category.id);
+      const entryCount = getEntriesForCategory(category.id).length;
 
       return (
         <div key={category.id}>
@@ -84,7 +102,7 @@ export const CategoryPage: React.FC = () => {
               </div>
               <div className="flex-1">
                 <p className="font-medium text-slate-900">{category.name}</p>
-                <p className="text-xs text-slate-500">{category.entryCount} 篇</p>
+                <p className="text-xs text-slate-500">{entryCount} 篇</p>
               </div>
             </div>
             {hasChildren && (
@@ -107,26 +125,31 @@ export const CategoryPage: React.FC = () => {
     });
   };
 
-  const sortedEntries = [...entries].sort((a, b) => {
-    switch (sortBy) {
-      case 'hot':
-        return b.viewCount - a.viewCount;
-      case 'recent':
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      case 'favorite':
-        return b.favoriteCount - a.favoriteCount;
-      default:
-        return 0;
-    }
-  });
+  const sortedEntries = useMemo(() => {
+    let filtered = [...categoryEntries];
 
-  const filteredEntries = searchTerm
-    ? sortedEntries.filter(
+    if (searchTerm) {
+      filtered = filtered.filter(
         (entry) =>
           entry.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          entry.summary.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : sortedEntries;
+          entry.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          entry.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'hot':
+          return b.viewCount - a.viewCount;
+        case 'recent':
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        case 'favorite':
+          return b.favoriteCount - a.favoriteCount;
+        default:
+          return 0;
+      }
+    });
+  }, [categoryEntries, sortBy, searchTerm]);
 
   return (
     <div className="bg-slate-50 min-h-screen">
@@ -148,7 +171,8 @@ export const CategoryPage: React.FC = () => {
               <div className="lg:col-span-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {rootCategories.map((category) => {
-                    const children = getCategoriesByParentId(category.id);
+                    const children = categories.filter(c => c.parentId === category.id);
+                    const entryCount = getEntriesForCategory(category.id).length;
                     return (
                       <Card key={category.id} hover className="p-6">
                         <Link to={`/category/${category.id}`}>
@@ -161,7 +185,7 @@ export const CategoryPage: React.FC = () => {
                                 {category.name}
                               </h3>
                               <p className="text-sm text-slate-500">
-                                {category.entryCount} 篇词条
+                                {entryCount} 篇词条
                               </p>
                             </div>
                           </div>
@@ -221,7 +245,12 @@ export const CategoryPage: React.FC = () => {
                       {selectedCategory?.name}
                     </h1>
                     <p className="text-sm text-slate-600 mt-1">
-                      {selectedCategory?.description}
+                      {selectedCategory?.description} · 共 {sortedEntries.length} 篇词条
+                      {categories.filter(c => c.parentId === id).length > 0 && (
+                        <span className="ml-2 text-blue-600">
+                          (包含子分类)
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -263,7 +292,7 @@ export const CategoryPage: React.FC = () => {
                   </div>
                 </div>
 
-                {filteredEntries.length > 0 ? (
+                {sortedEntries.length > 0 ? (
                   <div
                     className={
                       viewMode === 'grid'
@@ -271,13 +300,24 @@ export const CategoryPage: React.FC = () => {
                         : 'space-y-4'
                     }
                   >
-                    {filteredEntries.map((entry) => (
+                    {sortedEntries.map((entry) => (
                       <EntryCard key={entry.id} entry={entry} />
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12">
-                    <p className="text-slate-600">该分类下暂无词条</p>
+                  <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
+                    <AlertCircle size={64} className="mx-auto text-slate-300 mb-4" />
+                    <p className="text-slate-600">
+                      {searchTerm ? '没有找到匹配的词条' : '该分类下暂无词条'}
+                    </p>
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="mt-4 text-blue-600 hover:underline"
+                      >
+                        清除搜索
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

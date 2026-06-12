@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  Settings,
   BarChart3,
   Tag,
   Megaphone,
@@ -14,24 +13,76 @@ import {
   Edit,
   Trash2,
   Pin,
-  PinOff
+  PinOff,
+  CheckCircle
 } from 'lucide-react';
-import { mockCategories, getRootCategories, getCategoriesByParentId } from '../data/mockCategories';
-import { mockAnnouncements } from '../data/mockAnnouncements';
-import { mockDepartments } from '../data/mockDepartments';
-import { mockEntries } from '../data/mockEntries';
-import { Card, Button, Badge, Input, Tag as TagComponent } from '../components/base';
+import { useStore } from '../store';
+import { Card, Button, Badge, Input } from '../components/base';
 import { formatDate } from '../utils/formatDate';
 
 export const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     'overview' | 'categories' | 'announcements' | 'analytics' | 'users'
   >('overview');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDesc, setNewCategoryDesc] = useState('');
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
 
-  const categories = getRootCategories();
+  const { entries, categories, announcements, addCategory, updateCategory, deleteCategory, togglePinAnnouncement, deleteAnnouncement } = useStore();
+
+  const rootCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+
   const hotSearches = ['请假制度', '差旅报销', '采购流程', '入职指南', '项目管理'];
   const noResultSearches = ['绩效考核', '年终奖', '股权激励', '期权授予'];
-  const popularEntries = mockEntries.sort((a, b) => b.viewCount - a.viewCount).slice(0, 5);
+  const popularEntries = useMemo(() =>
+    [...entries].sort((a, b) => b.viewCount - a.viewCount).slice(0, 5),
+    [entries]
+  );
+
+  const showNotification = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
+  };
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) {
+      showNotification('请输入分类名称');
+      return;
+    }
+    addCategory({
+      name: newCategoryName.trim(),
+      icon: 'Building2',
+      description: newCategoryDesc.trim() || '新分类',
+      sortOrder: categories.length + 1,
+    });
+    setNewCategoryName('');
+    setNewCategoryDesc('');
+    setShowCategoryForm(false);
+    showNotification('分类添加成功');
+  };
+
+  const handleTogglePin = (id: string) => {
+    togglePinAnnouncement(id);
+    const ann = announcements.find(a => a.id === id);
+    showNotification(ann?.isPinned ? '已取消置顶' : '已置顶公告');
+  };
+
+  const handleDeleteAnnouncement = (id: string) => {
+    if (confirm('确定要删除这条公告吗?')) {
+      deleteAnnouncement(id);
+      showNotification('公告已删除');
+    }
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    if (confirm('确定要删除这个分类吗?')) {
+      deleteCategory(id);
+      showNotification('分类已删除');
+    }
+  };
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -40,9 +91,7 @@ export const AdminPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">词条总数</p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {mockEntries.length}
-              </p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">{entries.length}</p>
             </div>
             <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
               <FileText size={24} className="text-blue-600" />
@@ -53,9 +102,7 @@ export const AdminPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">分类总数</p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {categories.length}
-              </p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">{categories.length}</p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
               <Tag size={24} className="text-green-600" />
@@ -65,13 +112,11 @@ export const AdminPage: React.FC = () => {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-600">部门总数</p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {mockDepartments.length}
-              </p>
+              <p className="text-sm text-slate-600">公告总数</p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">{announcements.length}</p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-              <Users size={24} className="text-purple-600" />
+              <Megaphone size={24} className="text-purple-600" />
             </div>
           </div>
         </Card>
@@ -80,7 +125,7 @@ export const AdminPage: React.FC = () => {
             <div>
               <p className="text-sm text-slate-600">待审核</p>
               <p className="text-3xl font-bold text-slate-900 mt-1">
-                {mockEntries.filter((e) => e.status === 'pending').length}
+                {entries.filter(e => e.status === 'pending').length}
               </p>
             </div>
             <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
@@ -105,9 +150,7 @@ export const AdminPage: React.FC = () => {
                 className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
               >
                 <div className="flex items-center">
-                  <span className="text-2xl font-bold text-blue-600 w-8">
-                    {index + 1}
-                  </span>
+                  <span className="text-2xl font-bold text-blue-600 w-8">{index + 1}</span>
                   <span className="font-medium text-slate-900">{keyword}</span>
                 </div>
                 <Badge variant="primary">{Math.floor(Math.random() * 500) + 100} 次</Badge>
@@ -159,9 +202,7 @@ export const AdminPage: React.FC = () => {
               className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
             >
               <div className="flex items-center flex-1">
-                <span className="text-2xl font-bold text-slate-400 w-8">
-                  {index + 1}
-                </span>
+                <span className="text-2xl font-bold text-slate-400 w-8">{index + 1}</span>
                 <div className="flex-1">
                   <p className="font-medium text-slate-900">{entry.title}</p>
                   <p className="text-xs text-slate-500">{entry.authorName}</p>
@@ -182,16 +223,51 @@ export const AdminPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900">分类管理</h2>
-        <Button>
+        <Button onClick={() => setShowCategoryForm(!showCategoryForm)}>
           <Plus size={18} className="mr-2" />
           新增分类
         </Button>
       </div>
 
+      {showCategoryForm && (
+        <Card className="p-6 border-2 border-blue-500">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">添加新分类</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">分类名称</label>
+              <Input
+                placeholder="输入分类名称"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">分类描述</label>
+              <textarea
+                placeholder="输入分类描述(可选)"
+                value={newCategoryDesc}
+                onChange={(e) => setNewCategoryDesc(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <Button variant="outline" onClick={() => setShowCategoryForm(false)}>取消</Button>
+              <Button onClick={handleAddCategory}>
+                <CheckCircle size={18} className="mr-2" />
+                确认添加
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card className="p-6">
         <div className="space-y-4">
-          {categories.map((category) => {
-            const children = getCategoriesByParentId(category.id);
+          {rootCategories.map((category) => {
+            const children = categories.filter(c => c.parentId === category.id);
+            const entryCount = entries.filter(e => e.categoryId === category.id).length;
+
             return (
               <div key={category.id}>
                 <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
@@ -205,34 +281,37 @@ export const AdminPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
-                    <Badge variant="default">{category.entryCount} 篇</Badge>
-                    <Button variant="ghost" size="sm">
+                    <Badge variant="default">{entryCount} 篇</Badge>
+                    <Button variant="ghost" size="sm" onClick={() => updateCategory(category.id, { name: category.name + ' (已编辑)' })}>
                       <Edit size={16} />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <Trash2 size={16} />
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteCategory(category.id)}>
+                      <Trash2 size={16} className="text-red-600" />
                     </Button>
                   </div>
                 </div>
                 {children.length > 0 && (
                   <div className="ml-12 mt-2 space-y-2">
-                    {children.map((child) => (
-                      <div
-                        key={child.id}
-                        className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-slate-400">└</span>
-                          <p className="font-medium text-slate-900">{child.name}</p>
+                    {children.map((child) => {
+                      const childEntryCount = entries.filter(e => e.categoryId === child.id).length;
+                      return (
+                        <div
+                          key={child.id}
+                          className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-slate-400">└</span>
+                            <p className="font-medium text-slate-900">{child.name}</p>
+                          </div>
+                          <div className="flex items-center space-x-4">
+                            <Badge variant="default">{childEntryCount} 篇</Badge>
+                            <Button variant="ghost" size="sm" onClick={() => updateCategory(child.id, { name: child.name + ' (已编辑)' })}>
+                              <Edit size={16} />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <Badge variant="default">{child.entryCount} 篇</Badge>
-                          <Button variant="ghost" size="sm">
-                            <Edit size={16} />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -254,7 +333,7 @@ export const AdminPage: React.FC = () => {
       </div>
 
       <div className="space-y-4">
-        {mockAnnouncements.map((announcement) => (
+        {announcements.map((announcement) => (
           <Card key={announcement.id} className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -287,7 +366,7 @@ export const AdminPage: React.FC = () => {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" onClick={() => handleTogglePin(announcement.id)}>
                   {announcement.isPinned ? (
                     <>
                       <PinOff size={16} className="mr-1" />
@@ -303,8 +382,8 @@ export const AdminPage: React.FC = () => {
                 <Button variant="ghost" size="sm">
                   <Edit size={16} />
                 </Button>
-                <Button variant="ghost" size="sm">
-                  <Trash2 size={16} />
+                <Button variant="ghost" size="sm" onClick={() => handleDeleteAnnouncement(announcement.id)}>
+                  <Trash2 size={16} className="text-red-600" />
                 </Button>
               </div>
             </div>
@@ -340,6 +419,15 @@ export const AdminPage: React.FC = () => {
 
   return (
     <div className="bg-slate-50 min-h-screen">
+      {showToast && (
+        <div className="fixed top-20 right-4 z-50 animate-slideIn">
+          <div className="bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <CheckCircle size={18} className="text-green-400" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">管理后台</h1>

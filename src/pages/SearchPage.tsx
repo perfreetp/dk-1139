@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
   Search as SearchIcon,
@@ -8,46 +8,57 @@ import {
   Clock,
   Grid,
   List,
-  ChevronRight
+  CheckCircle
 } from 'lucide-react';
-import { searchEntries, mockEntries } from '../data/mockEntries';
-import { mockCategories, getRootCategories } from '../data/mockCategories';
-import { mockDepartments } from '../data/mockDepartments';
+import { useStore } from '../store';
 import { EntryCard } from '../components/business';
 import { Card, Input, Button, Tag, Badge } from '../components/base';
 import { debounce } from '../utils/debounce';
-import { useStore } from '../store';
 
 export const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('keyword') || '');
-  const [results, setResults] = useState(mockEntries);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const { recentSearches, addRecentSearch } = useStore();
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [sortBy, setSortBy] = useState('recent');
 
-  const categories = getRootCategories();
+  const { entries, categories, recentSearches, addRecentSearch } = useStore();
 
-  const allTags = Array.from(
-    new Set(mockEntries.flatMap((entry) => entry.tags))
-  ).slice(0, 20);
+  const rootCategories = categories.filter(c => !c.parentId);
+  const allTags = useMemo(() => {
+    return Array.from(new Set(entries.flatMap((entry) => entry.tags))).slice(0, 20);
+  }, [entries]);
 
-  const performSearch = (query: string) => {
-    let filtered = mockEntries;
+  const getAllChildCategoryIds = (categoryId: string): string[] => {
+    const childIds: string[] = [];
+    const directChildren = categories.filter(c => c.parentId === categoryId);
+    directChildren.forEach(child => {
+      childIds.push(child.id);
+      childIds.push(...getAllChildCategoryIds(child.id));
+    });
+    return childIds;
+  };
 
-    if (query) {
-      filtered = searchEntries(query);
+  const filteredEntries = useMemo(() => {
+    let filtered = [...entries];
+
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (entry) =>
+          entry.title.toLowerCase().includes(lowerQuery) ||
+          entry.summary.toLowerCase().includes(lowerQuery) ||
+          entry.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
+      );
     }
 
     if (selectedCategory) {
-      filtered = filtered.filter((entry) => entry.categoryId === selectedCategory);
-    }
-
-    if (selectedDepartment) {
-      filtered = filtered.filter((entry) => entry.departmentId === selectedDepartment);
+      const allCategoryIds = [selectedCategory, ...getAllChildCategoryIds(selectedCategory)];
+      filtered = filtered.filter((entry) => allCategoryIds.includes(entry.categoryId));
     }
 
     if (selectedTags.length > 0) {
@@ -56,24 +67,40 @@ export const SearchPage: React.FC = () => {
       );
     }
 
-    setResults(filtered);
-  };
+    switch (sortBy) {
+      case 'hot':
+        filtered.sort((a, b) => b.viewCount - a.viewCount);
+        break;
+      case 'recent':
+        filtered.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        break;
+      case 'favorite':
+        filtered.sort((a, b) => b.favoriteCount - a.favoriteCount);
+        break;
+    }
 
-  const debouncedSearch = debounce((query: string) => {
-    performSearch(query);
-  }, 300);
+    return filtered;
+  }, [entries, searchQuery, selectedCategory, selectedTags, sortBy, categories]);
 
   useEffect(() => {
     const keyword = searchParams.get('keyword') || '';
     setSearchQuery(keyword);
-    performSearch(keyword);
   }, [searchParams]);
+
+  const debouncedSearch = debounce((query: string) => {
+    if (query.trim()) {
+      addRecentSearch(query);
+    }
+  }, 500);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       setSearchParams({ keyword: searchQuery });
       addRecentSearch(searchQuery);
+      setToastMessage('搜索完成');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
     }
   };
 
@@ -85,14 +112,22 @@ export const SearchPage: React.FC = () => {
 
   const clearFilters = () => {
     setSelectedCategory('');
-    setSelectedDepartment('');
     setSelectedTags([]);
   };
 
-  const hasActiveFilters = selectedCategory || selectedDepartment || selectedTags.length > 0;
+  const hasActiveFilters = selectedCategory || selectedTags.length > 0;
 
   return (
     <div className="bg-slate-50 min-h-screen">
+      {showToast && (
+        <div className="fixed top-20 right-4 z-50 animate-slideIn">
+          <div className="bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <CheckCircle size={18} className="text-green-400" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-6">搜索词条</h1>
@@ -136,7 +171,6 @@ export const SearchPage: React.FC = () => {
                     onClick={() => {
                       setSearchQuery(keyword);
                       setSearchParams({ keyword });
-                      performSearch(keyword);
                     }}
                     className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors"
                   >
@@ -175,28 +209,17 @@ export const SearchPage: React.FC = () => {
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">全部分类</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  部门
-                </label>
-                <select
-                  value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">全部部门</option>
-                  {mockDepartments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </option>
+                  {rootCategories.map((cat) => (
+                    <React.Fragment key={cat.id}>
+                      <option value={cat.id}>{cat.name}</option>
+                      {categories
+                        .filter(c => c.parentId === cat.id)
+                        .map(child => (
+                          <option key={child.id} value={child.id}>
+                            {'　└ '}{child.name}
+                          </option>
+                        ))}
+                    </React.Fragment>
                   ))}
                 </select>
               </div>
@@ -206,7 +229,8 @@ export const SearchPage: React.FC = () => {
                   排序方式
                 </label>
                 <select
-                  onChange={(e) => performSearch(searchQuery)}
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="recent">最新更新</option>
@@ -236,21 +260,13 @@ export const SearchPage: React.FC = () => {
                 ))}
               </div>
             </div>
-
-            <div className="mt-4 flex justify-end">
-              <Button
-                onClick={() => performSearch(searchQuery)}
-              >
-                应用筛选
-              </Button>
-            </div>
           </Card>
         )}
 
         <div className="flex items-center justify-between mb-6">
           <div>
             <p className="text-slate-600">
-              找到 <span className="font-semibold text-slate-900">{results.length}</span> 个相关词条
+              找到 <span className="font-semibold text-slate-900">{filteredEntries.length}</span> 个相关词条
               {searchQuery && (
                 <span>
                   {' '}关于 "<span className="font-semibold">{searchQuery}</span>"
@@ -280,7 +296,7 @@ export const SearchPage: React.FC = () => {
           </div>
         </div>
 
-        {results.length > 0 ? (
+        {filteredEntries.length > 0 ? (
           <div
             className={
               viewMode === 'grid'
@@ -288,7 +304,7 @@ export const SearchPage: React.FC = () => {
                 : 'space-y-4'
             }
           >
-            {results.map((entry) => (
+            {filteredEntries.map((entry) => (
               <EntryCard key={entry.id} entry={entry} />
             ))}
           </div>
@@ -308,7 +324,7 @@ export const SearchPage: React.FC = () => {
           </div>
         )}
 
-        {results.length > 0 && (
+        {filteredEntries.length > 0 && (
           <div className="mt-12">
             <Card className="p-6">
               <div className="flex items-center space-x-2 mb-4">
@@ -323,7 +339,6 @@ export const SearchPage: React.FC = () => {
                       onClick={() => {
                         setSearchQuery(keyword);
                         setSearchParams({ keyword });
-                        performSearch(keyword);
                       }}
                       className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors"
                     >

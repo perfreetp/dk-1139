@@ -1,16 +1,31 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, TrendingUp, Clock, Bookmark, Building2, GitBranch, Lightbulb, Code, GraduationCap } from 'lucide-react';
-import { mockAnnouncements } from '../data/mockAnnouncements';
-import { mockCategories, getRootCategories } from '../data/mockCategories';
-import { getHotEntries, getRecentEntries } from '../data/mockEntries';
+import { useStore } from '../store';
 import { EntryCard, AnnouncementBanner } from '../components/business';
 import { Card } from '../components/base';
 
 export const HomePage: React.FC = () => {
-  const hotEntries = getHotEntries(6);
-  const recentEntries = getRecentEntries(6);
-  const categories = getRootCategories();
+  const { entries, announcements, categories } = useStore();
+
+  const hotEntries = useMemo(() =>
+    [...entries]
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, 6),
+    [entries]
+  );
+
+  const recentEntries = useMemo(() =>
+    [...entries]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 6),
+    [entries]
+  );
+
+  const rootCategories = useMemo(() =>
+    categories.filter(c => !c.parentId),
+    [categories]
+  );
 
   const getCategoryIcon = (iconName: string) => {
     switch (iconName) {
@@ -32,14 +47,14 @@ export const HomePage: React.FC = () => {
   return (
     <div className="bg-slate-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <AnnouncementBanner announcements={mockAnnouncements} />
+        <AnnouncementBanner announcements={announcements} />
 
         <section className="mb-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-slate-900">分类速查</h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {categories.map((category) => (
+            {rootCategories.map((category) => (
               <Link key={category.id} to={`/category/${category.id}`}>
                 <Card hover className="text-center">
                   <div className="flex flex-col items-center">

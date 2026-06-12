@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Heart, Reply, Send } from 'lucide-react';
 import { Comment } from '../../types';
-import { Avatar, Button, Input } from '../base';
+import { Avatar, Button } from '../base';
 import { formatRelativeTime } from '../../utils/formatDate';
-import { getRepliesByParentId } from '../../data/mockComments';
+import { useStore } from '../../store';
 
 interface CommentSectionProps {
   comments: Comment[];
@@ -11,15 +11,18 @@ interface CommentSectionProps {
 }
 
 export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddComment }) => {
-  const [newComment, setNewComment] = useState('');
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
-  const [replyContent, setReplyContent] = useState('');
+  const [newComment, setNewComment] = React.useState('');
+  const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
+  const [replyContent, setReplyContent] = React.useState('');
+
+  const { likeComment } = useStore();
+  const [likedComments, setLikedComments] = React.useState<Set<string>>(new Set());
 
   const rootComments = comments.filter(c => !c.parentId);
 
   const handleSubmit = () => {
-    if (newComment.trim()) {
-      onAddComment?.(newComment);
+    if (newComment.trim() && onAddComment) {
+      onAddComment(newComment);
       setNewComment('');
     }
   };
@@ -29,6 +32,13 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
       console.log('Reply to', parentId, ':', replyContent);
       setReplyContent('');
       setReplyingTo(null);
+    }
+  };
+
+  const handleLike = (commentId: string) => {
+    if (!likedComments.has(commentId)) {
+      likeComment(commentId);
+      setLikedComments(prev => new Set([...prev, commentId]));
     }
   };
 
@@ -64,7 +74,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
           <CommentItem
             key={comment.id}
             comment={comment}
-            replies={getRepliesByParentId(comment.id)}
+            replies={comments.filter(c => c.parentId === comment.id)}
             isReplying={replyingTo === comment.id}
             onReply={() => setReplyingTo(comment.id)}
             onCancelReply={() => {
@@ -74,6 +84,8 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
             replyContent={replyContent}
             onReplyContentChange={setReplyContent}
             onSubmitReply={() => handleReply(comment.id)}
+            onLike={() => handleLike(comment.id)}
+            isLiked={likedComments.has(comment.id)}
           />
         ))}
       </div>
@@ -90,6 +102,8 @@ interface CommentItemProps {
   replyContent: string;
   onReplyContentChange: (content: string) => void;
   onSubmitReply: () => void;
+  onLike: () => void;
+  isLiked: boolean;
 }
 
 const CommentItem: React.FC<CommentItemProps> = ({
@@ -101,9 +115,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
   replyContent,
   onReplyContentChange,
   onSubmitReply,
+  onLike,
+  isLiked,
 }) => {
-  const [liked, setLiked] = useState(false);
-
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4">
       <div className="flex space-x-3">
@@ -118,13 +132,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
           <p className="text-slate-700 mb-3">{comment.content}</p>
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => setLiked(!liked)}
-              className={`flex items-center space-x-1 text-sm ${
-                liked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
-              } transition-colors`}
+              onClick={onLike}
+              className={`flex items-center space-x-1 text-sm transition-colors ${
+                isLiked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
+              }`}
             >
-              <Heart size={14} fill={liked ? 'currentColor' : 'none'} />
-              <span>{comment.likeCount + (liked ? 1 : 0)}</span>
+              <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} />
+              <span>{comment.likeCount + (isLiked ? 1 : 0)}</span>
             </button>
             <button
               onClick={onReply}

@@ -12,21 +12,24 @@ import {
   Tag,
   User,
   History,
-  AlertCircle
+  AlertCircle,
+  CheckCircle,
+  MessageCircle,
+  Send
 } from 'lucide-react';
-import { getEntryById } from '../data/mockEntries';
-import { getCategoryById } from '../data/mockCategories';
-import { getDepartmentById } from '../data/mockDepartments';
-import { getCommentsByEntryId } from '../data/mockComments';
+import { useStore } from '../store';
 import { CommentSection } from '../components/business';
 import { Card, Tag as TagComponent, Badge, Avatar, Button } from '../components/base';
 import { formatDate, formatFileSize } from '../utils/formatDate';
-import { useStore } from '../store';
 
 export const EntryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { getEntryById, toggleFavorite, isFavorite, comments, addComment, incrementViewCount, currentUser } = useStore();
   const [entry, setEntry] = useState(getEntryById(id || ''));
-  const { toggleFavorite, isFavorite } = useStore();
+  const [showShareToast, setShowShareToast] = useState(false);
+  const [showFavoriteToast, setShowFavoriteToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   const isFav = entry ? isFavorite(entry.id) : false;
 
   useEffect(() => {
@@ -34,10 +37,21 @@ export const EntryDetailPage: React.FC = () => {
       const entryData = getEntryById(id);
       setEntry(entryData);
       if (entryData) {
+        incrementViewCount(id);
         document.title = `${entryData.title} - 知识百科`;
       }
     }
   }, [id]);
+
+  useEffect(() => {
+    if (entry) {
+      const interval = setInterval(() => {
+        const updated = getEntryById(entry.id);
+        if (updated) setEntry(updated);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [entry?.id]);
 
   if (!entry) {
     return (
@@ -54,9 +68,29 @@ export const EntryDetailPage: React.FC = () => {
     );
   }
 
-  const category = getCategoryById(entry.categoryId);
-  const department = getDepartmentById(entry.departmentId);
-  const comments = getCommentsByEntryId(entry.id);
+  const entryComments = comments.filter(c => c.entryId === entry.id);
+  const category = useStore(state => state.categories).find(c => c.id === entry.categoryId);
+  const department = useStore(state => {
+    const depts = [
+      { id: 'dept-1', name: '技术研发部', manager: '张伟' },
+      { id: 'dept-2', name: '产品设计部', manager: '李娜' },
+      { id: 'dept-3', name: '市场营销部', manager: '王强' },
+      { id: 'dept-4', name: '人力资源部', manager: '刘芳' },
+      { id: 'dept-5', name: '财务部', manager: '陈静' },
+      { id: 'dept-6', name: '行政部', manager: '赵磊' },
+      { id: 'dept-7', name: '客户服务部', manager: '孙敏' },
+      { id: 'dept-8', name: '质量管理部门', manager: '周涛' },
+    ];
+    return depts.find(d => d.id === entry.departmentId);
+  });
+
+  const handleFavorite = () => {
+    toggleFavorite(entry.id);
+    const newFav = isFavorite(entry.id);
+    setToastMessage(newFav ? '已添加到收藏' : '已取消收藏');
+    setShowFavoriteToast(true);
+    setTimeout(() => setShowFavoriteToast(false), 2000);
+  };
 
   const handleShare = () => {
     if (navigator.share) {
@@ -67,12 +101,51 @@ export const EntryDetailPage: React.FC = () => {
       });
     } else {
       navigator.clipboard.writeText(window.location.href);
-      alert('链接已复制到剪贴板');
+      setToastMessage('链接已复制到剪贴板');
+      setShowShareToast(true);
+      setTimeout(() => setShowShareToast(false), 2000);
     }
+  };
+
+  const handleDownload = (attachment: any) => {
+    setToastMessage(`正在下载: ${attachment.name}`);
+    setShowShareToast(true);
+    setTimeout(() => {
+      setToastMessage('附件下载功能需要在服务器环境中使用');
+      setTimeout(() => setShowShareToast(false), 2000);
+    }, 1000);
+  };
+
+  const handleAddComment = (content: string) => {
+    if (!content.trim()) {
+      setToastMessage('评论内容不能为空');
+      setShowShareToast(true);
+      setTimeout(() => setShowShareToast(false), 2000);
+      return;
+    }
+    addComment({
+      entryId: entry.id,
+      userId: currentUser?.id || 'user-1',
+      userName: currentUser?.name || '匿名用户',
+      userAvatar: currentUser?.avatar || '',
+      content: content.trim(),
+    });
+    setToastMessage('评论发布成功');
+    setShowShareToast(true);
+    setTimeout(() => setShowShareToast(false), 2000);
   };
 
   return (
     <div className="bg-slate-50 min-h-screen">
+      {showShareToast && (
+        <div className="fixed top-20 right-4 z-50 animate-slideIn">
+          <div className="bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <CheckCircle size={18} className="text-green-400" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <nav className="flex items-center space-x-2 text-sm text-slate-600 mb-6">
           <Link to="/" className="hover:text-blue-600">首页</Link>
@@ -102,6 +175,9 @@ export const EntryDetailPage: React.FC = () => {
                     {entry.status === 'pending' && (
                       <Badge variant="warning">待审核</Badge>
                     )}
+                    {entry.status === 'rejected' && (
+                      <Badge variant="danger">已驳回</Badge>
+                    )}
                     {entry.scope === 'department' && (
                       <Badge variant="default">部门内可见</Badge>
                     )}
@@ -119,7 +195,7 @@ export const EntryDetailPage: React.FC = () => {
               <div className="flex items-center justify-between border-t border-slate-200 pt-6">
                 <div className="flex items-center space-x-6">
                   <button
-                    onClick={() => toggleFavorite(entry.id)}
+                    onClick={handleFavorite}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                       isFav
                         ? 'bg-red-50 text-red-600 hover:bg-red-100'
@@ -174,7 +250,7 @@ export const EntryDetailPage: React.FC = () => {
                   {entry.attachments.map((attachment) => (
                     <div
                       key={attachment.id}
-                      className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                     >
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -187,7 +263,7 @@ export const EntryDetailPage: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" onClick={() => handleDownload(attachment)}>
                         下载
                       </Button>
                     </div>
@@ -196,7 +272,7 @@ export const EntryDetailPage: React.FC = () => {
               </Card>
             )}
 
-            <CommentSection comments={comments} />
+            <CommentSection comments={entryComments} onAddComment={handleAddComment} />
           </div>
 
           <div className="space-y-6">
@@ -221,7 +297,14 @@ export const EntryDetailPage: React.FC = () => {
                     <Heart size={16} className="mr-2" />
                     收藏
                   </span>
-                  <span className="font-medium">{entry.favoriteCount}</span>
+                  <span className="font-medium">{entry.favoriteCount + (isFav ? 1 : 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 flex items-center">
+                    <MessageCircle size={16} className="mr-2" />
+                    评论
+                  </span>
+                  <span className="font-medium">{entry.commentCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600 flex items-center">

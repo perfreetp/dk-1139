@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Save,
   Send,
@@ -9,20 +9,22 @@ import {
   Shield,
   Bell,
   FileText,
-  AlertCircle,
   CheckCircle,
+  AlertCircle,
   History,
   Link as LinkIcon,
-  Upload
+  Upload,
+  ArrowLeft
 } from 'lucide-react';
-import { getEntryById } from '../data/mockEntries';
-import { getRootCategories } from '../data/mockCategories';
-import { mockDepartments } from '../data/mockDepartments';
+import { useStore } from '../store';
 import { Card, Input, Button, Tag, Badge } from '../components/base';
 
 export const EditorPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { getEntryById, createEntry, updateEntry, submitForReview, currentUser } = useStore();
   const existingEntry = id ? getEntryById(id) : null;
+
   const [title, setTitle] = useState(existingEntry?.title || '');
   const [content, setContent] = useState(existingEntry?.content || '');
   const [summary, setSummary] = useState(existingEntry?.summary || '');
@@ -37,8 +39,54 @@ export const EditorPage: React.FC = () => {
   const [reminderNote, setReminderNote] = useState('');
   const [showVersionCompare, setShowVersionCompare] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [currentEntryId, setCurrentEntryId] = useState<string | null>(id || null);
 
-  const categories = getRootCategories();
+  useEffect(() => {
+    const savedDraft = localStorage.getItem('kb_draft');
+    if (savedDraft && !id) {
+      const draft = JSON.parse(savedDraft);
+      setTitle(draft.title || '');
+      setContent(draft.content || '');
+      setSummary(draft.summary || '');
+      setCategoryId(draft.categoryId || '');
+      setDepartmentId(draft.departmentId || '');
+      setTags(draft.tags || []);
+      setScope(draft.scope || 'all');
+      setCurrentEntryId(draft.id || null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!id && (title || content || summary)) {
+      const draftData = {
+        title,
+        content,
+        summary,
+        categoryId,
+        departmentId,
+        tags,
+        scope,
+        scopeValue,
+        id: currentEntryId
+      };
+      localStorage.setItem('kb_draft', JSON.stringify(draftData));
+      setAutoSaveStatus('saved');
+    }
+  }, [title, content, summary, categoryId, departmentId, tags, scope, scopeValue, id, currentEntryId]);
+
+  const categories = useStore(state => state.categories);
+  const mockDepartments = [
+    { id: 'dept-1', name: '技术研发部' },
+    { id: 'dept-2', name: '产品设计部' },
+    { id: 'dept-3', name: '市场营销部' },
+    { id: 'dept-4', name: '人力资源部' },
+    { id: 'dept-5', name: '财务部' },
+    { id: 'dept-6', name: '行政部' },
+    { id: 'dept-7', name: '客户服务部' },
+    { id: 'dept-8', name: '质量管理部门' },
+  ];
 
   const handleAddTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
@@ -51,33 +99,139 @@ export const EditorPage: React.FC = () => {
     setTags(tags.filter((tag) => tag !== tagToRemove));
   };
 
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!title.trim()) newErrors.title = '请输入标题';
+    if (!summary.trim()) newErrors.summary = '请输入摘要';
+    if (!content.trim()) newErrors.content = '请输入正文内容';
+    if (!categoryId) newErrors.categoryId = '请选择分类';
+    if (!departmentId) newErrors.departmentId = '请选择部门';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSaveDraft = () => {
+    if (!currentEntryId && (title || content || summary)) {
+      const entry = createEntry({
+        title: title || '未命名草稿',
+        content: content || '',
+        summary: summary || '',
+        categoryId: categoryId || 'cat-1',
+        departmentId: departmentId || 'dept-1',
+        tags,
+        authorId: currentUser?.id || 'user-1',
+        authorName: currentUser?.name || '匿名用户',
+        version: 1,
+        isOfficial: false,
+        scope,
+        scopeValue,
+        attachments: [],
+        status: 'draft',
+      });
+      setCurrentEntryId(entry.id);
+      localStorage.setItem('kb_draft_id', entry.id);
+    } else if (currentEntryId) {
+      updateEntry(currentEntryId, {
+        title: title || '未命名草稿',
+        content,
+        summary,
+        categoryId: categoryId || 'cat-1',
+        departmentId: departmentId || 'dept-1',
+        tags,
+        scope,
+        scopeValue,
+      });
+    }
     setAutoSaveStatus('saving');
     setTimeout(() => {
       setAutoSaveStatus('saved');
-      console.log('Draft saved');
-    }, 1000);
+    }, 500);
   };
 
   const handleSubmitForReview = () => {
-    if (!title || !content || !categoryId) {
-      alert('请填写必填项');
+    if (!validateForm()) {
+      alert('请填写所有必填项');
       return;
     }
-    console.log('Submit for review');
+
+    let entryId = currentEntryId;
+
+    if (!entryId) {
+      const entry = createEntry({
+        title,
+        content,
+        summary,
+        categoryId,
+        departmentId,
+        tags,
+        authorId: currentUser?.id || 'user-1',
+        authorName: currentUser?.name || '匿名用户',
+        version: 1,
+        isOfficial: false,
+        scope,
+        scopeValue,
+        attachments: [],
+        status: 'pending',
+      });
+      entryId = entry.id;
+    } else {
+      updateEntry(entryId, {
+        title,
+        content,
+        summary,
+        categoryId,
+        departmentId,
+        tags,
+        scope,
+        scopeValue,
+      });
+      submitForReview(entryId);
+    }
+
+    localStorage.removeItem('kb_draft');
+    localStorage.removeItem('kb_draft_id');
+
+    setSubmitSuccess(true);
+    setTimeout(() => {
+      navigate('/review');
+    }, 1500);
   };
+
+  if (submitSuccess) {
+    return (
+      <div className="bg-slate-50 min-h-screen flex items-center justify-center">
+        <Card className="p-12 text-center max-w-md">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle size={32} className="text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">提交成功！</h2>
+          <p className="text-slate-600 mb-6">您的词条已提交审核,即将跳转到审核中心...</p>
+          <div className="animate-pulse">
+            <div className="w-full bg-slate-200 rounded-full h-2">
+              <div className="bg-green-600 h-2 rounded-full w-2/3"></div>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              {existingEntry ? '编辑词条' : '创建新词条'}
-            </h1>
-            <p className="text-slate-600 mt-1">
-              {existingEntry ? `编辑词条: ${existingEntry.title}` : '编写新的知识词条'}
-            </p>
+          <div className="flex items-center space-x-4">
+            <Link to="/" className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+              <ArrowLeft size={24} className="text-slate-600" />
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">
+                {existingEntry ? '编辑词条' : '创建新词条'}
+              </h1>
+              <p className="text-slate-600 mt-1">
+                {existingEntry ? `编辑词条: ${existingEntry.title}` : '编写新的知识词条'}
+              </p>
+            </div>
           </div>
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-2 text-sm">
@@ -91,6 +245,12 @@ export const EditorPage: React.FC = () => {
                 <>
                   <Clock size={16} className="text-amber-600" />
                   <span className="text-slate-600">保存中...</span>
+                </>
+              )}
+              {autoSaveStatus === 'unsaved' && (
+                <>
+                  <AlertCircle size={16} className="text-red-600" />
+                  <span className="text-slate-600">未保存</span>
                 </>
               )}
             </div>
@@ -121,9 +281,13 @@ export const EditorPage: React.FC = () => {
                   <Input
                     placeholder="输入词条标题"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="text-lg"
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setAutoSaveStatus('unsaved');
+                    }}
+                    className={`text-lg ${errors.title ? 'border-red-500' : ''}`}
                   />
+                  {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
                 </div>
 
                 <div>
@@ -133,10 +297,16 @@ export const EditorPage: React.FC = () => {
                   <textarea
                     placeholder="简要描述词条内容..."
                     value={summary}
-                    onChange={(e) => setSummary(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    onChange={(e) => {
+                      setSummary(e.target.value);
+                      setAutoSaveStatus('unsaved');
+                    }}
+                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none ${
+                      errors.summary ? 'border-red-500' : 'border-slate-300'
+                    }`}
                     rows={3}
                   />
+                  {errors.summary && <p className="text-red-500 text-sm mt-1">{errors.summary}</p>}
                 </div>
 
                 <div>
@@ -145,12 +315,12 @@ export const EditorPage: React.FC = () => {
                   </label>
                   <div className="border border-slate-300 rounded-lg overflow-hidden">
                     <div className="bg-slate-50 border-b border-slate-300 p-2 flex flex-wrap gap-1">
-                      <button className="p-2 hover:bg-slate-200 rounded text-sm font-medium">B</button>
+                      <button className="p-2 hover:bg-slate-200 rounded text-sm font-bold">B</button>
                       <button className="p-2 hover:bg-slate-200 rounded text-sm italic">I</button>
                       <button className="p-2 hover:bg-slate-200 rounded text-sm underline">U</button>
-                      <button className="p-2 hover:bg-slate-200 rounded text-sm">H1</button>
-                      <button className="p-2 hover:bg-slate-200 rounded text-sm">H2</button>
-                      <button className="p-2 hover:bg-slate-200 rounded text-sm">H3</button>
+                      <button className="p-2 hover:bg-slate-200 rounded text-sm font-semibold">H1</button>
+                      <button className="p-2 hover:bg-slate-200 rounded text-sm font-semibold">H2</button>
+                      <button className="p-2 hover:bg-slate-200 rounded text-sm font-semibold">H3</button>
                       <button className="p-2 hover:bg-slate-200 rounded">•</button>
                       <button className="p-2 hover:bg-slate-200 rounded">1.</button>
                       <button className="p-2 hover:bg-slate-200 rounded">"</button>
@@ -162,11 +332,17 @@ export const EditorPage: React.FC = () => {
                     <textarea
                       placeholder="开始编写词条内容..."
                       value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      className="w-full px-4 py-3 focus:outline-none resize-none"
+                      onChange={(e) => {
+                        setContent(e.target.value);
+                        setAutoSaveStatus('unsaved');
+                      }}
+                      className={`w-full px-4 py-3 focus:outline-none resize-none ${
+                        errors.content ? 'border-red-500' : ''
+                      }`}
                       rows={20}
                     />
                   </div>
+                  {errors.content && <p className="text-red-500 text-sm mt-1">{errors.content}</p>}
                 </div>
               </div>
             </Card>
@@ -231,16 +407,22 @@ export const EditorPage: React.FC = () => {
                   </label>
                   <select
                     value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setCategoryId(e.target.value);
+                      setAutoSaveStatus('unsaved');
+                    }}
+                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      errors.categoryId ? 'border-red-500' : 'border-slate-300'
+                    }`}
                   >
                     <option value="">选择分类</option>
-                    {categories.map((cat) => (
+                    {categories.filter(c => !c.parentId).map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.name}
                       </option>
                     ))}
                   </select>
+                  {errors.categoryId && <p className="text-red-500 text-sm mt-1">{errors.categoryId}</p>}
                 </div>
 
                 <div>
@@ -249,8 +431,13 @@ export const EditorPage: React.FC = () => {
                   </label>
                   <select
                     value={departmentId}
-                    onChange={(e) => setDepartmentId(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => {
+                      setDepartmentId(e.target.value);
+                      setAutoSaveStatus('unsaved');
+                    }}
+                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      errors.departmentId ? 'border-red-500' : 'border-slate-300'
+                    }`}
                   >
                     <option value="">选择部门</option>
                     {mockDepartments.map((dept) => (
@@ -259,6 +446,7 @@ export const EditorPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  {errors.departmentId && <p className="text-red-500 text-sm mt-1">{errors.departmentId}</p>}
                 </div>
 
                 <div>
@@ -282,7 +470,7 @@ export const EditorPage: React.FC = () => {
                       placeholder="添加标签"
                       value={tagInput}
                       onChange={(e) => setTagInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
+                      onKeyPress={(e) => e.key === 'Enter' && (handleAddTag(), e.preventDefault())}
                     />
                     <Button variant="outline" onClick={handleAddTag}>
                       添加
@@ -304,7 +492,10 @@ export const EditorPage: React.FC = () => {
                     name="scope"
                     value="all"
                     checked={scope === 'all'}
-                    onChange={(e) => setScope(e.target.value as 'all')}
+                    onChange={(e) => {
+                      setScope(e.target.value as 'all');
+                      setAutoSaveStatus('unsaved');
+                    }}
                     className="mr-3"
                   />
                   <div>
@@ -318,7 +509,10 @@ export const EditorPage: React.FC = () => {
                     name="scope"
                     value="department"
                     checked={scope === 'department'}
-                    onChange={(e) => setScope(e.target.value as 'department')}
+                    onChange={(e) => {
+                      setScope(e.target.value as 'department');
+                      setAutoSaveStatus('unsaved');
+                    }}
                     className="mr-3"
                   />
                   <div className="flex-1">
@@ -326,7 +520,10 @@ export const EditorPage: React.FC = () => {
                     {scope === 'department' && (
                       <select
                         value={scopeValue}
-                        onChange={(e) => setScopeValue(e.target.value)}
+                        onChange={(e) => {
+                          setScopeValue(e.target.value);
+                          setAutoSaveStatus('unsaved');
+                        }}
                         className="mt-2 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm"
                       >
                         <option value="">选择部门</option>
@@ -345,7 +542,10 @@ export const EditorPage: React.FC = () => {
                     name="scope"
                     value="role"
                     checked={scope === 'role'}
-                    onChange={(e) => setScope(e.target.value as 'role')}
+                    onChange={(e) => {
+                      setScope(e.target.value as 'role');
+                      setAutoSaveStatus('unsaved');
+                    }}
                     className="mr-3"
                   />
                   <div className="flex-1">
@@ -353,7 +553,10 @@ export const EditorPage: React.FC = () => {
                     {scope === 'role' && (
                       <select
                         value={scopeValue}
-                        onChange={(e) => setScopeValue(e.target.value)}
+                        onChange={(e) => {
+                          setScopeValue(e.target.value);
+                          setAutoSaveStatus('unsaved');
+                        }}
                         className="mt-2 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm"
                       >
                         <option value="">选择角色</option>
