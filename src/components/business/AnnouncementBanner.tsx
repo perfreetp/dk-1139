@@ -10,7 +10,9 @@ interface AnnouncementBannerProps {
 
 export const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({ announcements }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const pinnedAnnouncements = announcements.filter(ann => ann.isPinned);
+  const pinnedAnnouncements = announcements
+    .filter(ann => ann.isPinned)
+    .sort((a, b) => (a.pinOrder || 0) - (b.pinOrder || 0));
 
   useEffect(() => {
     if (pinnedAnnouncements.length <= 1) return;

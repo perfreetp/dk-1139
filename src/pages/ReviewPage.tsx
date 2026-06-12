@@ -153,41 +153,79 @@ export const ReviewPage: React.FC = () => {
         {currentEntries.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1 space-y-4">
-              {currentEntries.map((entry) => (
-                <Card
-                  key={entry.id}
-                  hover
-                  className={`p-4 cursor-pointer transition-all ${
-                    selectedEntry === entry.id ? 'ring-2 ring-blue-500 shadow-lg' : ''
-                  }`}
-                  onClick={() => setSelectedEntry(entry.id)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-slate-900 line-clamp-2 flex-1">
-                      {entry.title}
-                    </h3>
-                    {activeTab === 'pending' && (
-                      <Badge variant="warning" className="ml-2">待审核</Badge>
-                    )}
-                    {activeTab === 'approved' && (
-                      <Badge variant="success" className="ml-2">已通过</Badge>
-                    )}
-                    {activeTab === 'rejected' && (
-                      <Badge variant="danger" className="ml-2">已驳回</Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-600 line-clamp-2 mb-3">
-                    {entry.summary}
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <div className="flex items-center space-x-2">
-                      <Avatar src="" name={entry.authorName} size="sm" />
-                      <span>{entry.authorName}</span>
+              {currentEntries.map((entry) => {
+                const reviews = getReviewsByEntryId(entry.id);
+                const latestReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
+
+                return (
+                  <Card
+                    key={entry.id}
+                    hover
+                    className={`p-4 cursor-pointer transition-all ${
+                      selectedEntry === entry.id ? 'ring-2 ring-blue-500 shadow-lg' : ''
+                    }`}
+                    onClick={() => setSelectedEntry(entry.id)}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-semibold text-slate-900 line-clamp-2 flex-1">
+                        {entry.title}
+                      </h3>
+                      {activeTab === 'pending' && (
+                        <Badge variant="warning" className="ml-2">待审核</Badge>
+                      )}
+                      {activeTab === 'approved' && (
+                        <Badge variant="success" className="ml-2">已通过</Badge>
+                      )}
+                      {activeTab === 'rejected' && (
+                        <Badge variant="danger" className="ml-2">已驳回</Badge>
+                      )}
                     </div>
-                    <span>{formatRelativeTime(entry.updatedAt)}</span>
-                  </div>
-                </Card>
-              ))}
+                    <p className="text-sm text-slate-600 line-clamp-2 mb-3">
+                      {entry.summary}
+                    </p>
+                    <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                      <div className="flex items-center space-x-2">
+                        <Avatar src="" name={entry.authorName} size="sm" />
+                        <span>{entry.authorName}</span>
+                      </div>
+                      <span>{formatRelativeTime(entry.updatedAt)}</span>
+                    </div>
+
+                    {(activeTab === 'approved' || activeTab === 'rejected') && latestReview && (
+                      <div className={`mt-3 pt-3 border-t ${
+                        latestReview.action === 'approve' ? 'border-green-200' : 'border-red-200'
+                      }`}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <div className="flex items-center space-x-1">
+                            {latestReview.action === 'approve' ? (
+                              <CheckCircle size={12} className="text-green-600" />
+                            ) : (
+                              <XCircle size={12} className="text-red-600" />
+                            )}
+                            <span className={latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'}>
+                              {latestReview.action === 'approve' ? '通过' : '驳回'}
+                            </span>
+                          </div>
+                          <span className="text-slate-500">
+                            {formatDate(latestReview.createdAt)}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1 text-xs text-slate-600 mb-1">
+                          <User size={12} />
+                          <span>处理人: {latestReview.reviewerName}</span>
+                        </div>
+                        {latestReview.comment && (
+                          <p className={`text-xs line-clamp-2 ${
+                            latestReview.action === 'approve' ? 'text-green-700' : 'text-red-700'
+                          }`}>
+                            意见: {latestReview.comment}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
 
             <div className="lg:col-span-2">

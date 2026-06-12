@@ -383,9 +383,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateAnnouncement: (id, updates) => {
     const { announcements } = get();
-    const updatedAnnouncements = announcements.map(ann =>
-      ann.id === id ? { ...ann, ...updates } : ann
-    );
+    const updatedAnnouncements = announcements.map(ann => {
+      if (ann.id === id) {
+        let newAnn = { ...ann, ...updates };
+        if (updates.isPinned === true && !ann.isPinned) {
+          const pinnedCount = announcements.filter(a => a.isPinned).length;
+          newAnn.pinOrder = pinnedCount + 1;
+        }
+        return newAnn;
+      }
+      return ann;
+    });
     saveToStorage('kb_announcements', updatedAnnouncements);
     set({ announcements: updatedAnnouncements });
   },

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Heart, Reply, Send } from 'lucide-react';
 import { Comment } from '../../types';
 import { Avatar, Button } from '../base';
@@ -12,29 +12,38 @@ interface CommentSectionProps {
 
 export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddComment }) => {
   const [newComment, setNewComment] = useState('');
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
-  const [replyContent, setReplyContent] = useState('');
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { likeComment, addReply, hasLikedComment, getCommentLikes, comments: allComments } = useStore();
-
-  const rootComments = comments.filter(c => !c.parentId);
+  const { addReply } = useStore();
 
   const handleSubmit = () => {
     if (newComment.trim() && onAddComment) {
       onAddComment(newComment);
       setNewComment('');
+      setRefreshKey(prev => prev + 1);
     }
   };
 
-  const handleReply = (parentId: string, entryId: string) => {
-    if (replyContent.trim()) {
-      addReply(parentId, entryId, replyContent);
-      setReplyContent('');
+  const handleReply = (parentId: string, entryId: string, content: string) => {
+    if (content.trim()) {
+      addReply(parentId, entryId, content);
       setReplyingTo(null);
       setRefreshKey(prev => prev + 1);
     }
   };
+
+  const commentMap = useMemo(() => {
+    const map: Record<string, Comment[]> = {};
+    comments.forEach(comment => {
+      const parentId = comment.parentId || 'root';
+      if (!map[parentId]) map[parentId] = [];
+      map[parentId].push(comment);
+    });
+    return map;
+  }, [comments]);
+
+  const rootComments = commentMap['root'] || [];
 
   return (
     <div className="space-y-6">
@@ -64,26 +73,20 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
       </div>
 
       <div className="space-y-4" key={refreshKey}>
-        {rootComments.map((comment) => {
-          const replies = comments.filter(c => c.parentId === comment.id);
-          return (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              replies={replies}
-              isReplying={replyingTo === comment.id}
-              onReply={() => setReplyingTo(comment.id)}
-              onCancelReply={() => {
-                setReplyingTo(null);
-                setReplyContent('');
-              }}
-              replyContent={replyContent}
-              onReplyContentChange={setReplyContent}
-              onSubmitReply={() => handleReply(comment.id, comment.entryId)}
-              entryId={comment.entryId}
-            />
-          );
-        })}
+        {rootComments.map((comment) => (
+          <CommentItem
+             key={comment.id}
+             comment={comment}
+             commentMap={commentMap}
+             replyingTo={replyingTo}
+             onReply={(id, name) => setReplyingTo({ id, name })}
+             onCancelReply={() => {
+               setReplyingTo(null);
+             }}
+             onSubmitReply={(content) => handleReply(comment.id, comment.entryId, content)}
+             depth={0}
+           />
+        ))}
       </div>
     </div>
   );
@@ -91,30 +94,35 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
 
 interface CommentItemProps {
   comment: Comment;
-  replies: Comment[];
-  isReplying: boolean;
-  onReply: () => void;
+  commentMap: Record<string, Comment[]>;
+  replyingTo: { id: string; name: string } | null;
+  onReply: (id: string, name: string) => void;
   onCancelReply: () => void;
-  replyContent: string;
-  onReplyContentChange: (content: string) => void;
-  onSubmitReply: () => void;
-  entryId: string;
+  onSubmitReply: (content: string) => void;
+  depth: number;
 }
 
 const CommentItem: React.FC<CommentItemProps> = ({
   comment,
-  replies,
-  isReplying,
+  commentMap,
+  replyingTo,
   onReply,
   onCancelReply,
-  replyContent,
-  onReplyContentChange,
   onSubmitReply,
-  entryId,
+  depth,
 }) => {
-  const { likeComment, hasLikedComment, getCommentLikes, comments: allComments } = useStore();
+  const { likeComment, hasLikedComment, getCommentLikes } = useStore();
   const [currentLiked, setCurrentLiked] = useState(hasLikedComment(comment.id));
   const [currentLikeCount, setCurrentLikeCount] = useState(getCommentLikes(comment.id));
+  const [localReplyContent, setLocalReplyContent] = useState('');
+
+  const replies = commentMap[comment.id] || [];
+  const isReplying = replyingTo?.id === comment.id;
+
+  useEffect(() => {
+    setCurrentLiked(hasLikedComment(comment.id));
+    setCurrentLikeCount(getCommentLikes(comment.id));
+  }, [comment.id]);
 
   const handleLike = () => {
     if (!currentLiked) {
@@ -124,42 +132,34 @@ const CommentItem: React.FC<CommentItemProps> = ({
     }
   };
 
-  const [replyStates, setReplyStates] = useState<Record<string, { liked: boolean; count: number }>>({});
+  const handleSubmitReply = () => {
+    if (localReplyContent.trim()) {
+      onSubmitReply(localReplyContent);
+      setLocalReplyContent('');
+    }
+  };
 
-  useEffect(() => {
-    const states: Record<string, { liked: boolean; count: number }> = {};
-    replies.forEach(reply => {
-      states[reply.id] = {
-        liked: hasLikedComment(reply.id),
-        count: getCommentLikes(reply.id)
-      };
-    });
-    setReplyStates(states);
-  }, [replies, comments]);
-
-  const handleReplyLike = (replyId: string) => {
-    const state = replyStates[replyId];
-    if (state && !state.liked) {
-      likeComment(replyId);
-      setReplyStates(prev => ({
-        ...prev,
-        [replyId]: { liked: true, count: state.count + 1 }
-      }));
+  const handleNestedReply = (parentId: string, entryId: string) => {
+    if (localReplyContent.trim()) {
+      useStore.getState().addReply(parentId, entryId, localReplyContent);
+      setLocalReplyContent('');
     }
   };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4">
       <div className="flex space-x-3">
-        <Avatar src={comment.userAvatar} name={comment.userName} size="md" />
+        <Avatar src={comment.userAvatar} name={comment.userName} size={depth === 0 ? "md" : "sm"} />
         <div className="flex-1">
           <div className="flex items-center space-x-2 mb-1">
-            <span className="font-semibold text-slate-900">{comment.userName}</span>
+            <span className={`font-semibold text-slate-900 ${depth > 0 ? 'text-sm' : ''}`}>
+              {comment.userName}
+            </span>
             <span className="text-xs text-slate-500">
               {formatRelativeTime(comment.createdAt)}
             </span>
           </div>
-          <p className="text-slate-700 mb-3">{comment.content}</p>
+          <p className={`text-slate-700 mb-3 ${depth > 0 ? 'text-sm' : ''}`}>{comment.content}</p>
           <div className="flex items-center space-x-4">
             <button
               onClick={handleLike}
@@ -171,7 +171,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
               <span>{currentLikeCount}</span>
             </button>
             <button
-              onClick={onReply}
+              onClick={() => onReply(comment.id, comment.userName)}
               className="flex items-center space-x-1 text-sm text-slate-500 hover:text-blue-600 transition-colors"
             >
               <Reply size={14} />
@@ -179,53 +179,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
             </button>
           </div>
 
-          {replies.length > 0 && (
-            <div className="mt-4 space-y-3 pl-4 border-l-2 border-slate-100">
-              {replies.map((reply) => {
-                const replyState = replyStates[reply.id] || { liked: false, count: 0 };
-                return (
-                  <div key={reply.id} className="bg-slate-50 rounded-lg p-3">
-                    <div className="flex space-x-2">
-                      <Avatar src={reply.userAvatar} name={reply.userName} size="sm" />
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className="font-semibold text-sm text-slate-900">{reply.userName}</span>
-                          <span className="text-xs text-slate-500">
-                            {formatRelativeTime(reply.createdAt)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-700 mb-2">{reply.content}</p>
-                        <div className="flex items-center space-x-4">
-                          <button
-                            onClick={() => handleReplyLike(reply.id)}
-                            className={`flex items-center space-x-1 text-xs transition-colors ${
-                              replyState.liked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'
-                            }`}
-                          >
-                            <Heart size={12} fill={replyState.liked ? 'currentColor' : 'none'} />
-                            <span>{replyState.count}</span>
-                          </button>
-                          <button
-                            onClick={() => setReplyingTo(reply.id)}
-                            className="flex items-center space-x-1 text-xs text-slate-500 hover:text-blue-600 transition-colors"
-                          >
-                            <Reply size={12} />
-                            <span>回复</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           {isReplying && (
             <div className="mt-3 p-3 bg-slate-50 rounded-lg">
+              <div className="text-xs text-blue-600 mb-2">回复 @{replyingTo?.name}</div>
               <textarea
-                value={replyContent}
-                onChange={(e) => onReplyContentChange(e.target.value)}
+                value={localReplyContent}
+                onChange={(e) => setLocalReplyContent(e.target.value)}
                 placeholder="写下你的回复..."
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
                 rows={2}
@@ -235,12 +194,29 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 <Button variant="ghost" size="sm" onClick={onCancelReply}>
                   取消
                 </Button>
-                <Button size="sm" onClick={onSubmitReply} disabled={!replyContent.trim()}>
+                <Button size="sm" onClick={handleSubmitReply} disabled={!localReplyContent.trim()}>
                   回复
                 </Button>
               </div>
             </div>
           )}
+
+          {replies.length > 0 && (
+             <div className="mt-4 space-y-3 pl-4 border-l-2 border-slate-100">
+               {replies.map((reply) => (
+                 <CommentItem
+                   key={reply.id}
+                   comment={reply}
+                   commentMap={commentMap}
+                   replyingTo={replyingTo}
+                   onReply={onReply}
+                   onCancelReply={onCancelReply}
+                   onSubmitReply={() => handleNestedReply(reply.id, reply.entryId)}
+                   depth={depth + 1}
+                 />
+               ))}
+             </div>
+           )}
         </div>
       </div>
     </div>
